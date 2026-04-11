@@ -901,8 +901,8 @@ export default function TioJohnny() {
               <textarea value={formAbout} onChange={(e) => setFormAbout(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none resize-none" style={inputStyle} placeholder="Describe la trayectoria y especialidad..." />
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Experiencia (una por línea)</label>
-              <textarea value={formExperience} onChange={(e) => setFormExperience(e.target.value)} rows={4} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none resize-none" style={inputStyle} placeholder={"Vogue LATAM – Editorial 2025\nSantiago Fashion Week 2024"} />
+              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Servicios (uno por línea)</label>
+              <textarea value={formExperience} onChange={(e) => setFormExperience(e.target.value)} rows={4} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none resize-none" style={inputStyle} placeholder={"Sesión fotográfica\nEvento corporativo\nDesfile de moda"} />
             </div>
             <div>
               <label className="text-xs font-semibold uppercase tracking-widest mb-3 block" style={{ color: "#8B5CF6" }}>Medidas / Stats</label>
@@ -1152,7 +1152,7 @@ export default function TioJohnny() {
           )}
           {experienceList.length > 0 && (
             <div className="mt-5">
-              <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Experiencia</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Servicios</h3>
               <ul className="space-y-1">
                 {experienceList.map((exp, i) => (
                   <li key={i} className="text-sm flex items-start gap-2" style={{ color: "#c4c4d8" }}>
@@ -1238,9 +1238,9 @@ export default function TioJohnny() {
           </div>
         ) : (
           <>
-            <h1 className="text-xl font-extrabold tracking-tight">
-              <span style={{ color: "#8B5CF6" }}>Tio</span>Johnny
-              <span className="text-xs font-normal ml-1" style={{ color: "#6b6b90" }}>.cl</span>
+            <h1 style={{ fontFamily: "'Sora', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" }}>
+              <span style={{ color: "#8B5CF6" }}>Tio</span><span style={{ color: "#fff" }}>Johnny</span>
+              <span style={{ fontWeight: 400, fontSize: 11, color: "#6b6b90", marginLeft: 3 }}>.cl</span>
             </h1>
             <div className="flex items-center gap-1">
               <button onClick={() => setSearchOpen(true)} className="p-2">
