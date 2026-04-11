@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Search, Heart, X, ChevronLeft, ChevronRight, Phone, MessageCircle,
+  Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
   ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check,
 } from "lucide-react";
@@ -272,6 +272,7 @@ export default function TioJohnny() {
     const { data, error } = await supabase
       .from("talents")
       .select("*")
+      .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
     if (!error && data) setTalents(data);
     setLoading(false);
@@ -485,8 +486,9 @@ export default function TioJohnny() {
       // Update existing
       await supabase.from("talents").update(profileData).eq("id", editorId);
     } else {
-      // Insert new
-      await supabase.from("talents").insert([profileData]);
+      // Insert new — place at the end
+      const maxOrder = talents.length > 0 ? Math.max(...talents.map((t) => t.sort_order ?? 0)) : 0;
+      await supabase.from("talents").insert([{ ...profileData, sort_order: maxOrder + 1 }]);
     }
 
     await fetchTalents();
@@ -497,6 +499,31 @@ export default function TioJohnny() {
   const handleArchive = async (id, archived) => {
     await supabase.from("talents").update({ archived }).eq("id", id);
     await fetchTalents();
+  };
+
+  // ─── Reorder talents (swap sort_order with neighbor) ──────────────
+  const [reordering, setReordering] = useState(false);
+  const handleReorder = async (id, direction) => {
+    if (reordering) return;
+    setReordering(true);
+    // Work with active talents only (they're already sorted)
+    const active = talents.filter((t) => !t.archived);
+    const idx = active.findIndex((t) => t.id === id);
+    const swapIdx = idx + direction; // -1 = up, +1 = down
+    if (swapIdx < 0 || swapIdx >= active.length) { setReordering(false); return; }
+
+    const a = active[idx];
+    const b = active[swapIdx];
+    // Swap their sort_order values
+    const orderA = a.sort_order ?? idx;
+    const orderB = b.sort_order ?? swapIdx;
+
+    await Promise.all([
+      supabase.from("talents").update({ sort_order: orderB }).eq("id", a.id),
+      supabase.from("talents").update({ sort_order: orderA }).eq("id", b.id),
+    ]);
+    await fetchTalents();
+    setReordering(false);
   };
 
   const handleDelete = async (id) => {
@@ -905,8 +932,28 @@ export default function TioJohnny() {
         {/* ── Active Talents ── */}
         <div className="px-4 pb-4 space-y-3">
           <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#8B5CF6" }}>Activas ({activeTalents.length})</h3>
-          {activeTalents.map((t) => (
-            <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "#1e1e3a" }}>
+          {activeTalents.map((t, idx) => (
+            <div key={t.id} className="flex items-center gap-2 p-3 rounded-2xl" style={{ background: "#1e1e3a" }}>
+              {/* Position & reorder arrows */}
+              <div className="flex flex-col items-center flex-shrink-0" style={{ width: 24 }}>
+                <button
+                  onClick={() => handleReorder(t.id, -1)}
+                  disabled={idx === 0 || reordering}
+                  className="p-0.5 rounded transition-all active:scale-90"
+                  style={{ opacity: idx === 0 ? 0.2 : 1 }}
+                >
+                  <ChevronUp size={14} color="#8B5CF6" />
+                </button>
+                <span className="text-xs font-bold" style={{ color: "#4a4a6a" }}>{idx + 1}</span>
+                <button
+                  onClick={() => handleReorder(t.id, 1)}
+                  disabled={idx === activeTalents.length - 1 || reordering}
+                  className="p-0.5 rounded transition-all active:scale-90"
+                  style={{ opacity: idx === activeTalents.length - 1 ? 0.2 : 1 }}
+                >
+                  <ChevronDown size={14} color="#8B5CF6" />
+                </button>
+              </div>
               <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
                 <img src={getMainPhoto(t)} alt={t.name} className="w-full h-full object-cover" />
               </div>
