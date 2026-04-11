@@ -712,60 +712,67 @@ export default function TioJohnny() {
   // Reset swipe index when category/filter changes
   useEffect(() => { setSwipeIndex(0); }, [activeCategory, searchQuery]);
 
+  const lastPosRef = useRef({ x: 0, time: 0 }); // for velocity tracking
+
   const handleSwipeTouchStart = (e) => {
     const touch = e.touches[0];
     swipeStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    lastPosRef.current = { x: touch.clientX, time: Date.now() };
     setSwiping(true);
+    setSwipeDelta({ x: 0, y: 0 });
   };
   const handleSwipeTouchMove = (e) => {
     if (!swipeStartRef.current) return;
     const touch = e.touches[0];
-    setSwipeDelta({
-      x: touch.clientX - swipeStartRef.current.x,
-      y: touch.clientY - swipeStartRef.current.y,
-    });
+    const dx = touch.clientX - swipeStartRef.current.x;
+    const dy = touch.clientY - swipeStartRef.current.y;
+    lastPosRef.current = { x: touch.clientX, time: Date.now() };
+    setSwipeDelta({ x: dx, y: dy });
   };
   const handleSwipeTouchEnd = () => {
     if (!swipeStartRef.current) return;
-    if (Math.abs(swipeDelta.x) > SWIPE_THRESHOLD) {
-      if (swipeDelta.x > 0) {
-        // Swipe right → favorite
-        doSwipe("right");
-      } else {
-        // Swipe left → skip
-        doSwipe("left");
-      }
-    } else {
-      setSwipeDelta({ x: 0, y: 0 });
-    }
+    resolveSwipe();
     setSwiping(false);
     swipeStartRef.current = null;
   };
+
   // Mouse support for desktop
   const handleSwipeMouseDown = (e) => {
+    e.preventDefault();
     swipeStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+    lastPosRef.current = { x: e.clientX, time: Date.now() };
     setSwiping(true);
+    setSwipeDelta({ x: 0, y: 0 });
+
     const handleMouseMove = (ev) => {
-      setSwipeDelta({
-        x: ev.clientX - swipeStartRef.current.x,
-        y: ev.clientY - swipeStartRef.current.y,
-      });
+      if (!swipeStartRef.current) return;
+      const dx = ev.clientX - swipeStartRef.current.x;
+      const dy = ev.clientY - swipeStartRef.current.y;
+      lastPosRef.current = { x: ev.clientX, time: Date.now() };
+      setSwipeDelta({ x: dx, y: dy });
     };
     const handleMouseUp = () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
-      // Check threshold
-      setSwipeDelta((d) => {
-        if (Math.abs(d.x) > SWIPE_THRESHOLD) {
-          doSwipe(d.x > 0 ? "right" : "left");
-        }
-        return { x: 0, y: 0 };
-      });
+      resolveSwipe();
       setSwiping(false);
       swipeStartRef.current = null;
     };
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  // Decide if the swipe should trigger based on distance OR velocity
+  const resolveSwipe = () => {
+    setSwipeDelta((d) => {
+      const elapsed = Date.now() - (swipeStartRef.current?.time || Date.now());
+      const velocity = elapsed > 0 ? Math.abs(d.x) / elapsed * 1000 : 0; // px/sec
+      const shouldTrigger = Math.abs(d.x) > SWIPE_THRESHOLD || (Math.abs(d.x) > 30 && velocity > 500);
+      if (shouldTrigger) {
+        doSwipe(d.x > 0 ? "right" : "left");
+      }
+      return shouldTrigger ? d : { x: 0, y: 0 };
+    });
   };
 
   const doSwipe = (dir) => {
@@ -1654,120 +1661,154 @@ export default function TioJohnny() {
 
       {/* ═══ SWIPE VIEW ═══ */}
       {viewMode === "swipe" && (
-        <div className="flex flex-col items-center" style={{ minHeight: "calc(100vh - 160px)" }}>
+        <div className="flex flex-col items-center" style={{ height: "calc(100vh - 140px)", height: "calc(100dvh - 140px)", overflow: "hidden" }}>
           {swipeIndex < filtered.length ? (
             <>
-              {/* Card stack */}
-              <div className="relative mt-4" style={{ width: "85vw", maxWidth: 380, height: "65vh", maxHeight: 520 }}>
-                {/* Background card (next) */}
-                {swipeIndex + 1 < filtered.length && (
-                  <div className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: "scale(0.94) translateY(12px)", opacity: 0.5, background: "#1e1e3a" }}>
-                    <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
-                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
-                  </div>
-                )}
-                {/* Active card */}
-                <div
-                  className={`absolute inset-0 rounded-3xl overflow-hidden cursor-grab card-stack-in ${swipeAnim === "right" ? "swipe-right" : swipeAnim === "left" ? "swipe-left" : ""}`}
-                  style={{
-                    transform: swipeAnim ? undefined : `translateX(${swipeDelta.x}px) rotate(${swipeDelta.x * 0.06}deg)`,
-                    transition: swiping ? "none" : "transform 0.3s cubic-bezier(0.22,1,0.36,1)",
-                    boxShadow: "0 8px 40px rgba(0,0,0,0.4)",
-                    userSelect: "none",
-                    touchAction: "none",
-                  }}
-                  onTouchStart={handleSwipeTouchStart}
-                  onTouchMove={handleSwipeTouchMove}
-                  onTouchEnd={handleSwipeTouchEnd}
-                  onMouseDown={handleSwipeMouseDown}
-                >
-                  <img
-                    src={getMainPhoto(filtered[swipeIndex])}
-                    alt={filtered[swipeIndex].name}
-                    className="w-full h-full object-cover pointer-events-none"
-                    style={{ objectPosition: "top" }}
-                    draggable={false}
-                  />
-                  <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
-
-                  {/* LIKE / NOPE indicators */}
-                  {swipeDelta.x > 30 && (
-                    <div className="absolute top-6 left-6 px-4 py-2 rounded-xl font-bold text-xl" style={{
-                      border: "3px solid #22c55e",
-                      color: "#22c55e",
-                      opacity: Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1),
-                      transform: "rotate(-15deg)",
-                    }}>
-                      LIKE
-                    </div>
-                  )}
-                  {swipeDelta.x < -30 && (
-                    <div className="absolute top-6 right-6 px-4 py-2 rounded-xl font-bold text-xl" style={{
-                      border: "3px solid #f43f5e",
-                      color: "#f43f5e",
-                      opacity: Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1),
-                      transform: "rotate(15deg)",
-                    }}>
-                      NOPE
-                    </div>
-                  )}
-
-                  {/* Card info */}
-                  <div className="absolute bottom-0 left-0 right-0 p-5">
-                    <h2 className="text-2xl font-bold text-white">{filtered[swipeIndex].name}</h2>
-                    <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex].specialty}</p>
-                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#b8b8d0" }}>
-                      <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {filtered[swipeIndex].rate}
-                    </p>
-                    {/* Tap to open full profile */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openProfile(filtered[swipeIndex]); }}
-                      className="mt-3 text-xs font-semibold px-4 py-2 rounded-full"
-                      style={{ background: "rgba(139,92,246,0.3)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.4)" }}
+              {/* Card stack — fills available space minus buttons */}
+              {(() => {
+                // Calculate how much the drag has progressed toward threshold
+                const dragProgress = Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1);
+                // Back card interpolates: scale 0.92→1, opacity 0.4→1, translateY 16→0
+                const backScale = 0.92 + dragProgress * 0.08;
+                const backOpacity = 0.4 + dragProgress * 0.6;
+                const backY = 16 - dragProgress * 16;
+                return (
+                  <div className="relative mt-2 flex-1" style={{ width: "88vw", maxWidth: 400, minHeight: 0 }}>
+                    {/* Background card (next) — reacts to drag */}
+                    {swipeIndex + 1 < filtered.length && (
+                      <div
+                        className="absolute inset-0 rounded-3xl overflow-hidden"
+                        style={{
+                          transform: `scale(${backScale}) translateY(${backY}px)`,
+                          opacity: backOpacity,
+                          transition: swiping ? "none" : "all 0.4s cubic-bezier(0.22,1,0.36,1)",
+                          background: "#1e1e3a",
+                        }}
+                      >
+                        <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+                        <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
+                        <div className="absolute bottom-0 left-0 right-0 p-5">
+                          <h2 className="text-xl font-bold text-white">{filtered[swipeIndex + 1].name}</h2>
+                          <p className="text-xs mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex + 1].specialty}</p>
+                        </div>
+                      </div>
+                    )}
+                    {/* 3rd card hint */}
+                    {swipeIndex + 2 < filtered.length && (
+                      <div className="absolute inset-0 rounded-3xl" style={{ transform: `scale(${0.85 + dragProgress * 0.04}) translateY(${28 - dragProgress * 8}px)`, opacity: 0.2 + dragProgress * 0.15, transition: swiping ? "none" : "all 0.4s ease", background: "#1e1e3a" }} />
+                    )}
+                    {/* Active card */}
+                    <div
+                      className={`absolute inset-0 rounded-3xl overflow-hidden cursor-grab ${swipeAnim ? "" : "card-stack-in"} ${swipeAnim === "right" ? "swipe-right" : swipeAnim === "left" ? "swipe-left" : ""}`}
+                      style={{
+                        transform: swipeAnim ? undefined : `translateX(${swipeDelta.x}px) rotate(${swipeDelta.x * 0.08}deg)`,
+                        transition: swiping ? "none" : "transform 0.35s cubic-bezier(0.22,1,0.36,1)",
+                        boxShadow: `0 8px 40px rgba(0,0,0,0.4)`,
+                        userSelect: "none",
+                        touchAction: "none",
+                        zIndex: 2,
+                      }}
+                      onTouchStart={handleSwipeTouchStart}
+                      onTouchMove={handleSwipeTouchMove}
+                      onTouchEnd={handleSwipeTouchEnd}
+                      onMouseDown={handleSwipeMouseDown}
                     >
-                      Ver perfil completo
-                    </button>
-                  </div>
-                </div>
-              </div>
+                      <img
+                        src={getMainPhoto(filtered[swipeIndex])}
+                        alt={filtered[swipeIndex].name}
+                        className="w-full h-full object-cover pointer-events-none"
+                        style={{ objectPosition: "top" }}
+                        draggable={false}
+                      />
+                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
 
-              {/* Action buttons */}
-              <div className="flex items-center gap-6 mt-6 mb-4">
-                {/* Undo */}
+                      {/* Green / Red glow overlay based on drag direction */}
+                      <div className="absolute inset-0 pointer-events-none rounded-3xl" style={{
+                        background: swipeDelta.x > 20
+                          ? `linear-gradient(135deg, rgba(34,197,94,${dragProgress * 0.15}) 0%, transparent 60%)`
+                          : swipeDelta.x < -20
+                            ? `linear-gradient(225deg, rgba(244,63,94,${dragProgress * 0.15}) 0%, transparent 60%)`
+                            : "none",
+                        transition: swiping ? "none" : "background 0.2s ease",
+                      }} />
+
+                      {/* LIKE / NOPE stamps */}
+                      {swipeDelta.x > 25 && (
+                        <div className="absolute top-6 left-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
+                          border: "4px solid #22c55e",
+                          color: "#22c55e",
+                          opacity: Math.min(dragProgress, 1),
+                          transform: `rotate(-15deg) scale(${0.8 + dragProgress * 0.2})`,
+                          textShadow: "0 2px 8px rgba(34,197,94,0.3)",
+                        }}>
+                          LIKE
+                        </div>
+                      )}
+                      {swipeDelta.x < -25 && (
+                        <div className="absolute top-6 right-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
+                          border: "4px solid #f43f5e",
+                          color: "#f43f5e",
+                          opacity: Math.min(dragProgress, 1),
+                          transform: `rotate(15deg) scale(${0.8 + dragProgress * 0.2})`,
+                          textShadow: "0 2px 8px rgba(244,63,94,0.3)",
+                        }}>
+                          NOPE
+                        </div>
+                      )}
+
+                      {/* Card info */}
+                      <div className="absolute bottom-0 left-0 right-0 p-5">
+                        <h2 className="text-2xl font-bold text-white">{filtered[swipeIndex].name}</h2>
+                        <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex].specialty}</p>
+                        <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#b8b8d0" }}>
+                          <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {filtered[swipeIndex].rate}
+                        </p>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openProfile(filtered[swipeIndex]); }}
+                          className="mt-3 text-xs font-semibold px-4 py-2 rounded-full"
+                          style={{ background: "rgba(139,92,246,0.3)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.4)" }}
+                        >
+                          Ver perfil completo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action buttons — compact, no overflow */}
+              <div className="flex items-center justify-center gap-5 py-3 flex-shrink-0">
                 <button
                   onClick={undoSwipe}
                   disabled={swipeIndex === 0}
-                  className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  className="w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90"
                   style={{ background: "#1e1e3a", border: "2px solid #2a2a4a", opacity: swipeIndex === 0 ? 0.3 : 1 }}
                 >
-                  <RotateCcw size={18} color="#f59e0b" />
+                  <RotateCcw size={16} color="#f59e0b" />
                 </button>
-                {/* Skip (left) */}
                 <button
                   onClick={() => doSwipe("left")}
-                  className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
-                  style={{ background: "#1e1e3a", border: "3px solid #f43f5e", boxShadow: "0 0 20px rgba(244,63,94,0.2)" }}
+                  className="w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  style={{ background: "#1e1e3a", border: "3px solid #f43f5e", boxShadow: "0 0 16px rgba(244,63,94,0.2)" }}
                 >
-                  <X size={28} color="#f43f5e" />
+                  <X size={24} color="#f43f5e" />
                 </button>
-                {/* Favorite (right) */}
                 <button
                   onClick={() => doSwipe("right")}
-                  className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
-                  style={{ background: "#1e1e3a", border: "3px solid #22c55e", boxShadow: "0 0 20px rgba(34,197,94,0.2)" }}
+                  className="w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  style={{ background: "#1e1e3a", border: "3px solid #22c55e", boxShadow: "0 0 16px rgba(34,197,94,0.2)" }}
                 >
-                  <Heart size={28} color="#22c55e" fill="#22c55e" />
+                  <Heart size={24} color="#22c55e" fill="#22c55e" />
                 </button>
-                {/* Share */}
                 <button
                   onClick={(e) => handleShare(filtered[swipeIndex], e)}
-                  className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  className="w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90"
                   style={{ background: "#1e1e3a", border: "2px solid #2a2a4a" }}
                 >
-                  <Share2 size={18} color="#60a5fa" />
+                  <Share2 size={16} color="#60a5fa" />
                 </button>
               </div>
-              <p className="text-xs mb-4" style={{ color: "#4a4a6a" }}>Pasarela &middot; {swipeIndex + 1} / {filtered.length}</p>
+              <p className="text-xs pb-2 flex-shrink-0" style={{ color: "#4a4a6a" }}>Pasarela &middot; {swipeIndex + 1} / {filtered.length}</p>
             </>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
