@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,11 +14,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════════════════════
-const CATEGORIES = ["Todas", "Fashion", "Commercial", "Acting", "Extras"];
-const CATEGORY_OPTIONS = ["Fashion", "Commercial", "Acting", "Extras"];
+// Categories are now loaded from Supabase (no hardcoded list)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLACEHOLDER SVG (shown when no photos uploaded)
@@ -91,8 +87,10 @@ export default function TioJohnny() {
   // ─── App state ─────────────────────────────────────────────────────────
   const [view, setView] = useState("public");
   const [talents, setTalents] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
+  const [newCategoryName, setNewCategoryName] = useState("");
 
   // ─── Login state ───────────────────────────────────────────────────────
   const [loginEmail, setLoginEmail] = useState("");
@@ -132,9 +130,10 @@ export default function TioJohnny() {
   const searchRef = useRef(null);
   const fileRef = useRef(null);
 
-  // ─── Load talents from Supabase on mount ───────────────────────────────
+  // ─── Load data from Supabase on mount ───────────────────────────────
   useEffect(() => {
     fetchTalents();
+    fetchCategories();
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
@@ -154,6 +153,32 @@ export default function TioJohnny() {
       .order("created_at", { ascending: true });
     if (!error && data) setTalents(data);
     setLoading(false);
+  };
+
+  const fetchCategories = async () => {
+    const { data, error } = await supabase
+      .from("categories")
+      .select("*")
+      .order("sort_order", { ascending: true });
+    if (!error && data) setCategories(data);
+  };
+
+  // Derived arrays for UI
+  const categoryNames = categories.map((c) => c.name);
+  const publicCategories = ["Todas", ...categoryNames];
+
+  // ─── Category management handlers ─────────────────────────────────────
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    const nextOrder = categories.length > 0 ? Math.max(...categories.map((c) => c.sort_order)) + 1 : 1;
+    await supabase.from("categories").insert([{ name: newCategoryName.trim(), sort_order: nextOrder }]);
+    setNewCategoryName("");
+    await fetchCategories();
+  };
+
+  const handleDeleteCategory = async (id) => {
+    await supabase.from("categories").delete().eq("id", id);
+    await fetchCategories();
   };
 
   useEffect(() => {
@@ -229,7 +254,7 @@ export default function TioJohnny() {
       setFormPhotos(talent.photos || []);
     } else {
       setEditorId(null);
-      setFormName(""); setFormSpecialty(""); setFormCategory("Fashion");
+      setFormName(""); setFormSpecialty(""); setFormCategory(categoryNames[0] || "");
       setFormRate(""); setFormPhone(""); setFormLocation("");
       setFormAbout(""); setFormExperience("");
       setFormHeight(""); setFormWeight(""); setFormEyes("");
@@ -435,7 +460,7 @@ export default function TioJohnny() {
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Categoría</label>
                 <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle}>
-                  {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {categoryNames.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             </div>
@@ -517,6 +542,41 @@ export default function TioJohnny() {
           <button onClick={() => openEditor(null)} className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
             <Plus size={18} /> Agregar Nueva Modelo
           </button>
+        </div>
+
+        {/* ── Category Manager ── */}
+        <div className="px-4 pb-4">
+          <div className="rounded-2xl p-4" style={{ background: "#1e1e3a" }}>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
+              <Tag size={14} color="#8B5CF6" /> Categorías
+            </h3>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {categories.map((cat) => (
+                <div key={cat.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: "#12122a", border: "1px solid #2a2a4a", color: "#9898b0" }}>
+                  {cat.name}
+                  <button onClick={() => handleDeleteCategory(cat.id)} className="ml-1 hover:opacity-70">
+                    <X size={12} color="#f43f5e" />
+                  </button>
+                </div>
+              ))}
+              {categories.length === 0 && (
+                <p className="text-xs" style={{ color: "#4a4a6a" }}>No hay categorías. Agrega una.</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory(); }}
+                className="flex-1 px-3 py-2 rounded-lg text-sm text-white outline-none"
+                style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
+                placeholder="Nueva categoría..."
+              />
+              <button onClick={handleAddCategory} className="px-4 py-2 rounded-lg font-bold text-white text-xs transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
+                <Plus size={14} />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="px-4 pb-6 space-y-3">
@@ -691,7 +751,7 @@ export default function TioJohnny() {
       )}
 
       <div className="flex gap-2 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-        {CATEGORIES.map((cat) => {
+        {publicCategories.map((cat) => {
           const active = activeCategory === cat;
           return (
             <button key={cat} onClick={() => setActiveCategory(cat)} className="flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all" style={{ background: active ? "#8B5CF6" : "#1e1e3a", color: active ? "#fff" : "#9898b0", border: active ? "none" : "1px solid #2a2a4a" }}>
