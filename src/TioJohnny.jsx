@@ -210,6 +210,9 @@ export default function TioJohnny() {
   const [formInstagram, setFormInstagram] = useState("");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [catDropdownOpen, setCatDropdownOpen] = useState(false);
+  const [catSearch, setCatSearch] = useState("");
+  const catDropdownRef = useRef(null);
 
   // ─── Animation state ────────────────────────────────────────────────
   const [floatingHearts, setFloatingHearts] = useState([]);
@@ -307,6 +310,23 @@ export default function TioJohnny() {
   useEffect(() => {
     if (searchOpen && searchRef.current) searchRef.current.focus();
   }, [searchOpen]);
+
+  // Close category dropdown on outside click
+  useEffect(() => {
+    if (!catDropdownOpen) return;
+    const handler = (e) => {
+      if (catDropdownRef.current && !catDropdownRef.current.contains(e.target)) {
+        setCatDropdownOpen(false);
+        setCatSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [catDropdownOpen]);
 
   // ─── Helpers ───────────────────────────────────────────────────────────
   const getMainPhoto = (t) => {
@@ -789,24 +809,72 @@ export default function TioJohnny() {
               <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Nombre completo</label>
               <input value={formName} onChange={(e) => setFormName(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="Ej: Valentina Rojas" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Especialidad</label>
-                <input value={formSpecialty} onChange={(e) => setFormSpecialty(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="Fashion Model" />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Categorías</label>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {categoryNames.map((c) => {
-                    const isSelected = formCategories.includes(c);
-                    return (
-                      <button key={c} type="button" onClick={() => setFormCategories((prev) => isSelected ? prev.filter((x) => x !== c) : [...prev, c])} className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all" style={{ background: isSelected ? "#8B5CF6" : "#12122a", color: isSelected ? "#fff" : "#9898b0", border: isSelected ? "2px solid #8B5CF6" : "1px solid #2a2a4a" }}>
-                        {c}
-                      </button>
-                    );
-                  })}
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Especialidad</label>
+              <input value={formSpecialty} onChange={(e) => setFormSpecialty(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="Fashion Model" />
+            </div>
+            <div ref={catDropdownRef} className="relative">
+              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Categorías</label>
+              {/* Selected tags */}
+              <button
+                type="button"
+                onClick={() => { setCatDropdownOpen((o) => !o); setCatSearch(""); }}
+                className="w-full px-4 py-3 rounded-xl text-sm text-left outline-none flex items-center gap-2 flex-wrap min-h-[44px]"
+                style={{ ...inputStyle, color: "#fff" }}
+              >
+                {formCategories.length === 0 && <span style={{ color: "#4a4a6a" }}>Seleccionar categorías...</span>}
+                {formCategories.map((c) => (
+                  <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: "#8B5CF6" }}>
+                    {c}
+                    <span
+                      onClick={(e) => { e.stopPropagation(); setFormCategories((prev) => prev.filter((x) => x !== c)); }}
+                      className="cursor-pointer ml-0.5"
+                      style={{ opacity: 0.7 }}
+                    >&times;</span>
+                  </span>
+                ))}
+                <ChevronDown size={14} color="#7878a0" className="ml-auto flex-shrink-0" style={{ transform: catDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+              </button>
+              {/* Dropdown */}
+              {catDropdownOpen && (
+                <div className="absolute left-0 right-0 mt-1 rounded-xl overflow-hidden z-20" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", maxHeight: 240, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
+                  {/* Search */}
+                  <div className="px-3 py-2" style={{ borderBottom: "1px solid #2a2a4a" }}>
+                    <input
+                      value={catSearch}
+                      onChange={(e) => setCatSearch(e.target.value)}
+                      placeholder="Buscar categoría..."
+                      className="w-full bg-transparent text-sm text-white outline-none placeholder-gray-600"
+                      autoFocus
+                    />
+                  </div>
+                  {/* Options */}
+                  <div className="overflow-y-auto" style={{ maxHeight: 192 }}>
+                    {categoryNames
+                      .filter((c) => !catSearch || c.toLowerCase().includes(catSearch.toLowerCase()))
+                      .map((c) => {
+                        const checked = formCategories.includes(c);
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setFormCategories((prev) => checked ? prev.filter((x) => x !== c) : [...prev, c])}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors"
+                            style={{ color: checked ? "#fff" : "#9898b0", background: checked ? "rgba(139,92,246,0.15)" : "transparent" }}
+                          >
+                            <div className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center" style={{ border: checked ? "none" : "1.5px solid #4a4a6a", background: checked ? "#8B5CF6" : "transparent" }}>
+                              {checked && <Check size={10} color="#fff" strokeWidth={3} />}
+                            </div>
+                            {c}
+                          </button>
+                        );
+                      })}
+                    {categoryNames.filter((c) => !catSearch || c.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
+                      <p className="px-4 py-3 text-xs" style={{ color: "#4a4a6a" }}>No se encontraron categorías</p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1252,7 +1320,7 @@ export default function TioJohnny() {
                 </button>
                 <div className="absolute bottom-0 left-0 right-0 p-3">
                   <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
-                  <p className="text-xs mt-0.5" style={{ color: "#b8b8d0" }}>{t.specialty}</p>
+                  <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
                   <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{t.rate}</p>
                 </div>
               </div>
