@@ -269,8 +269,7 @@ export default function TioJohnny() {
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
   const [swipeIndex, setSwipeIndex] = useState(0);
-  const [swipeDelta, setSwipeDelta] = useState({ x: 0, y: 0 });
-  const [swiping, setSwiping] = useState(false);
+  // swipeDelta & swiping removed — drag is now DOM-direct via refs for 60fps
   const [swipeAnim, setSwipeAnim] = useState(null); // "left" | "right" | null
   const [showSwipeTutorial, setShowSwipeTutorial] = useState(false);
   const swipeTutorialShown = useRef(false);
@@ -825,78 +824,155 @@ export default function TioJohnny() {
     }, 250);
   }, []);
 
-  // ─── Swipe mode handlers ───────────────────────────────────────────
-  // Reset swipe index when category/filter changes
+  // ─── Swipe mode handlers (DOM-direct for 60fps) ─────────────────────
   useEffect(() => { setSwipeIndex(0); }, [activeCategory, searchQuery]);
 
-  const lastPosRef = useRef({ x: 0, time: 0 }); // for velocity tracking
+  const lastPosRef = useRef({ x: 0, time: 0 });
+  const dragXRef = useRef(0); // live drag x, NOT in state
+  const swipeCardRef = useRef(null);
+  const swipeBackRef = useRef(null);
+  const swipeThirdRef = useRef(null);
+  const swipeLikeRef = useRef(null);
+  const swipeNopeRef = useRef(null);
+  const swipeGlowRef = useRef(null);
+
+  // Apply drag position directly to DOM (no React re-render)
+  const applyDrag = (dx) => {
+    dragXRef.current = dx;
+    const card = swipeCardRef.current;
+    if (card) {
+      card.style.transition = "none";
+      card.style.transform = `translateX(${dx}px) rotate(${dx * 0.06}deg)`;
+    }
+    const progress = Math.min(Math.abs(dx) / SWIPE_THRESHOLD, 1);
+    // Back card
+    const back = swipeBackRef.current;
+    if (back) {
+      back.style.transition = "none";
+      back.style.transform = `scale(${0.93 + progress * 0.07}) translateY(${12 - progress * 12}px)`;
+      back.style.opacity = 0.5 + progress * 0.5;
+    }
+    // Third card
+    const third = swipeThirdRef.current;
+    if (third) {
+      third.style.transition = "none";
+      third.style.transform = `scale(${0.86 + progress * 0.04}) translateY(${24 - progress * 8}px)`;
+      third.style.opacity = 0.25 + progress * 0.15;
+    }
+    // Glow
+    const glow = swipeGlowRef.current;
+    if (glow) {
+      if (dx > 15) {
+        glow.style.background = `linear-gradient(135deg, rgba(34,197,94,${Math.min(progress * 0.25, 0.25)}) 0%, transparent 60%)`;
+      } else if (dx < -15) {
+        glow.style.background = `linear-gradient(225deg, rgba(244,63,94,${Math.min(progress * 0.25, 0.25)}) 0%, transparent 60%)`;
+      } else {
+        glow.style.background = "none";
+      }
+    }
+    // LIKE / NOPE stamps
+    const like = swipeLikeRef.current;
+    if (like) {
+      if (dx > 20) {
+        like.style.display = "block";
+        like.style.opacity = Math.min(progress * 1.2, 1);
+        like.style.transform = `rotate(-15deg) scale(${0.8 + progress * 0.2})`;
+      } else {
+        like.style.display = "none";
+      }
+    }
+    const nope = swipeNopeRef.current;
+    if (nope) {
+      if (dx < -20) {
+        nope.style.display = "block";
+        nope.style.opacity = Math.min(progress * 1.2, 1);
+        nope.style.transform = `rotate(15deg) scale(${0.8 + progress * 0.2})`;
+      } else {
+        nope.style.display = "none";
+      }
+    }
+  };
 
   const handleSwipeTouchStart = (e) => {
     const touch = e.touches[0];
     swipeStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
     lastPosRef.current = { x: touch.clientX, time: Date.now() };
-    setSwiping(true);
-    setSwipeDelta({ x: 0, y: 0 });
+    dragXRef.current = 0;
   };
   const handleSwipeTouchMove = (e) => {
     if (!swipeStartRef.current) return;
     const touch = e.touches[0];
     const dx = touch.clientX - swipeStartRef.current.x;
-    const dy = touch.clientY - swipeStartRef.current.y;
     lastPosRef.current = { x: touch.clientX, time: Date.now() };
-    setSwipeDelta({ x: dx, y: dy });
+    applyDrag(dx);
   };
   const handleSwipeTouchEnd = () => {
     if (!swipeStartRef.current) return;
     resolveSwipe();
-    setSwiping(false);
     swipeStartRef.current = null;
   };
 
-  // Mouse support for desktop
   const handleSwipeMouseDown = (e) => {
     e.preventDefault();
     swipeStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     lastPosRef.current = { x: e.clientX, time: Date.now() };
-    setSwiping(true);
-    setSwipeDelta({ x: 0, y: 0 });
+    dragXRef.current = 0;
 
     const handleMouseMove = (ev) => {
       if (!swipeStartRef.current) return;
       const dx = ev.clientX - swipeStartRef.current.x;
-      const dy = ev.clientY - swipeStartRef.current.y;
       lastPosRef.current = { x: ev.clientX, time: Date.now() };
-      setSwipeDelta({ x: dx, y: dy });
+      applyDrag(dx);
     };
     const handleMouseUp = () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
       resolveSwipe();
-      setSwiping(false);
       swipeStartRef.current = null;
     };
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
 
-  // Decide if the swipe should trigger based on distance OR velocity
   const resolveSwipe = () => {
-    setSwipeDelta((d) => {
-      const elapsed = Date.now() - (swipeStartRef.current?.time || Date.now());
-      const velocity = elapsed > 0 ? Math.abs(d.x) / elapsed * 1000 : 0; // px/sec
-      const shouldTrigger = Math.abs(d.x) > SWIPE_THRESHOLD || (Math.abs(d.x) > 30 && velocity > 500);
-      if (shouldTrigger) {
-        doSwipe(d.x > 0 ? "right" : "left");
-      }
-      return shouldTrigger ? d : { x: 0, y: 0 };
-    });
+    const dx = dragXRef.current;
+    const elapsed = Date.now() - (swipeStartRef.current?.time || Date.now());
+    const velocity = elapsed > 0 ? Math.abs(dx) / elapsed * 1000 : 0;
+    const shouldTrigger = Math.abs(dx) > SWIPE_THRESHOLD || (Math.abs(dx) > 30 && velocity > 500);
+    if (shouldTrigger) {
+      doSwipe(dx > 0 ? "right" : "left");
+    } else {
+      // Snap back with transition
+      const card = swipeCardRef.current;
+      if (card) { card.style.transition = "transform 0.3s cubic-bezier(0.22,1,0.36,1)"; card.style.transform = "translateX(0) rotate(0deg)"; }
+      const back = swipeBackRef.current;
+      if (back) { back.style.transition = "all 0.3s cubic-bezier(0.22,1,0.36,1)"; back.style.transform = "scale(0.93) translateY(12px)"; back.style.opacity = "0.5"; }
+      const third = swipeThirdRef.current;
+      if (third) { third.style.transition = "all 0.3s cubic-bezier(0.22,1,0.36,1)"; third.style.transform = "scale(0.86) translateY(24px)"; third.style.opacity = "0.25"; }
+      const glow = swipeGlowRef.current;
+      if (glow) glow.style.background = "none";
+      const like = swipeLikeRef.current; if (like) like.style.display = "none";
+      const nope = swipeNopeRef.current; if (nope) nope.style.display = "none";
+      dragXRef.current = 0;
+    }
   };
 
   const doSwipe = (dir) => {
-    const flyX = dir === "right" ? window.innerWidth * 1.5 : -window.innerWidth * 1.5;
-    const flyRot = dir === "right" ? 25 : -25;
+    const flyX = dir === "right" ? window.innerWidth * 1.3 : -window.innerWidth * 1.3;
     setSwipeAnim(dir);
-    setSwipeDelta({ x: flyX, y: 0 });
+    // Animate card off-screen via DOM
+    const card = swipeCardRef.current;
+    if (card) {
+      card.style.transition = "transform 0.2s ease-out, opacity 0.2s ease-out";
+      card.style.transform = `translateX(${flyX}px) rotate(${dir === "right" ? 25 : -25}deg)`;
+      card.style.opacity = "0";
+    }
+    // Back card snaps to front position
+    const back = swipeBackRef.current;
+    if (back) { back.style.transition = "all 0.2s ease-out"; back.style.transform = "scale(1) translateY(0)"; back.style.opacity = "1"; }
+    const third = swipeThirdRef.current;
+    if (third) { third.style.transition = "all 0.2s ease-out"; third.style.transform = "scale(0.93) translateY(12px)"; third.style.opacity = "0.5"; }
+
     const currentTalent = filtered[swipeIndex];
     if (currentTalent) trackEvent(dir === "right" ? "swipe_like" : "swipe_skip", currentTalent.id);
     if (dir === "right" && currentTalent) {
@@ -908,9 +984,9 @@ export default function TioJohnny() {
     }
     setTimeout(() => {
       setSwipeAnim(null);
-      setSwipeDelta({ x: 0, y: 0 });
+      dragXRef.current = 0;
       setSwipeIndex((i) => Math.min(i + 1, filtered.length));
-    }, 400);
+    }, 220);
   };
 
   const undoSwipe = () => {
@@ -1938,144 +2014,97 @@ export default function TioJohnny() {
           {swipeIndex < filtered.length ? (
             <>
               {/* Card stack — fills available space minus buttons */}
-              {(() => {
-                const dragProgress = Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1);
-                const clampedDragProgress = swipeAnim ? 1 : dragProgress;
-                // Back card interpolates: scale 0.93→1, opacity 0.5→1, translateY 12→0
-                const backScale = 0.93 + clampedDragProgress * 0.07;
-                const backOpacity = 0.5 + clampedDragProgress * 0.5;
-                const backY = 12 - clampedDragProgress * 12;
-                // 3rd card
-                const thirdScale = 0.86 + clampedDragProgress * 0.04;
-                const thirdY = 24 - clampedDragProgress * 8;
-                const thirdOpacity = 0.25 + clampedDragProgress * 0.15;
-                return (
-                  <div className="relative mt-2 flex-1" style={{ width: "88vw", maxWidth: 400, minHeight: 0 }}>
-                    {/* 4th card shadow (static, just a shape) */}
-                    {swipeIndex + 3 < filtered.length && (
-                      <div className="absolute inset-0 rounded-3xl" style={{ transform: "scale(0.80) translateY(34px)", opacity: 0.1, background: "#2a2a4a", zIndex: 0 }} />
-                    )}
-                    {/* 3rd card (hint) */}
-                    {swipeIndex + 2 < filtered.length && (
-                      <div className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: `scale(${thirdScale}) translateY(${thirdY}px)`, opacity: thirdOpacity, transition: swiping ? "none" : "all 0.4s cubic-bezier(0.22,1,0.36,1)", background: "#1e1e3a", zIndex: 1 }}>
-                        <img src={getMainPhoto(filtered[swipeIndex + 2])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top", filter: "blur(2px) brightness(0.5)" }} />
-                      </div>
-                    )}
-                    {/* 2nd card (next) — reacts to drag */}
-                    {swipeIndex + 1 < filtered.length && (
-                      <div
-                        className="absolute inset-0 rounded-3xl overflow-hidden"
-                        style={{
-                          transform: `scale(${backScale}) translateY(${backY}px)`,
-                          opacity: backOpacity,
-                          transition: swiping ? "none" : "all 0.4s cubic-bezier(0.22,1,0.36,1)",
-                          background: "#1e1e3a",
-                          zIndex: 2,
-                        }}
-                      >
-                        <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
-                        <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
-                        <div className="absolute bottom-0 left-0 right-0 p-5">
-                          <h2 className="text-xl font-bold text-white">{filtered[swipeIndex + 1].name}</h2>
-                          <p className="text-xs mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex + 1].specialty}</p>
-                        </div>
-                      </div>
-                    )}
-                    {/* Active card (top) */}
-                    <div
-                      className={`absolute inset-0 rounded-3xl overflow-hidden cursor-grab ${!swipeAnim && swipeDelta.x === 0 ? "card-stack-in" : ""}`}
-                      style={{
-                        transform: `translateX(${swipeDelta.x}px) rotate(${swipeDelta.x * 0.06}deg)`,
-                        transition: swiping ? "none" : "transform 0.4s cubic-bezier(0.22,1,0.36,1)",
-                        boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
-                        userSelect: "none",
-                        touchAction: "none",
-                        zIndex: 3,
-                        opacity: swipeAnim ? Math.max(1 - Math.abs(swipeDelta.x) / (window.innerWidth * 0.8), 0) : 1,
-                      }}
-                      onTouchStart={handleSwipeTouchStart}
-                      onTouchMove={handleSwipeTouchMove}
-                      onTouchEnd={handleSwipeTouchEnd}
-                      onMouseDown={handleSwipeMouseDown}
-                    >
-                      <img
-                        src={getMainPhoto(filtered[swipeIndex])}
-                        alt={filtered[swipeIndex].name}
-                        className="w-full h-full object-cover pointer-events-none"
-                        style={{ objectPosition: "top" }}
-                        draggable={false}
-                      />
-                      <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
-
-                      {/* Green / Red glow overlay based on drag direction */}
-                      <div className="absolute inset-0 pointer-events-none rounded-3xl" style={{
-                        background: swipeDelta.x > 15
-                          ? `linear-gradient(135deg, rgba(34,197,94,${Math.min(clampedDragProgress * 0.25, 0.25)}) 0%, transparent 60%)`
-                          : swipeDelta.x < -15
-                            ? `linear-gradient(225deg, rgba(244,63,94,${Math.min(clampedDragProgress * 0.25, 0.25)}) 0%, transparent 60%)`
-                            : "none",
-                        transition: swiping ? "none" : "background 0.2s ease",
-                      }} />
-
-                      {/* LIKE / NOPE stamps */}
-                      {swipeDelta.x > 20 && (
-                        <div className="absolute top-6 left-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
-                          border: "4px solid #22c55e",
-                          color: "#22c55e",
-                          opacity: Math.min(clampedDragProgress * 1.2, 1),
-                          transform: `rotate(-15deg) scale(${0.8 + clampedDragProgress * 0.2})`,
-                          textShadow: "0 2px 12px rgba(34,197,94,0.4)",
-                        }}>
-                          LIKE
-                        </div>
-                      )}
-                      {swipeDelta.x < -20 && (
-                        <div className="absolute top-6 right-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
-                          border: "4px solid #f43f5e",
-                          color: "#f43f5e",
-                          opacity: Math.min(clampedDragProgress * 1.2, 1),
-                          transform: `rotate(15deg) scale(${0.8 + clampedDragProgress * 0.2})`,
-                          textShadow: "0 2px 12px rgba(244,63,94,0.4)",
-                        }}>
-                          NOPE
-                        </div>
-                      )}
-
-                      {/* Swipe tutorial overlay */}
-                      {showSwipeTutorial && !swiping && !swipeAnim && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 10 }}>
-                          <div className="flex flex-col items-center gap-3">
-                            <div className="flex items-center gap-6 text-xs font-bold" style={{ color: "rgba(255,255,255,0.7)" }}>
-                              <span className="flex items-center gap-1"><X size={14} color="#f43f5e" /> NOPE</span>
-                              <span className="flex items-center gap-1">LIKE <Heart size={14} color="#22c55e" fill="#22c55e" /></span>
-                            </div>
-                            <div className="swipe-tutorial-hand" style={{ fontSize: 40 }}>
-                              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13"/></svg>
-                            </div>
-                            <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Desliza para elegir</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Card info */}
-                      <div className="absolute bottom-0 left-0 right-0 p-5">
-                        <h2 className="text-2xl font-bold text-white">{filtered[swipeIndex].name}</h2>
-                        <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex].specialty}</p>
-                        <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#b8b8d0" }}>
-                          <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {filtered[swipeIndex].rate}
-                        </p>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openProfile(filtered[swipeIndex]); }}
-                          className="mt-3 text-xs font-semibold px-4 py-2 rounded-full"
-                          style={{ background: "rgba(139,92,246,0.3)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.4)" }}
-                        >
-                          Ver perfil completo
-                        </button>
-                      </div>
+              <div className="relative mt-2 flex-1" style={{ width: "88vw", maxWidth: 400, minHeight: 0 }}>
+                {/* 4th card shadow (static) */}
+                {swipeIndex + 3 < filtered.length && (
+                  <div className="absolute inset-0 rounded-3xl" style={{ transform: "scale(0.80) translateY(34px)", opacity: 0.1, background: "#2a2a4a", zIndex: 0 }} />
+                )}
+                {/* 3rd card (hint) */}
+                {swipeIndex + 2 < filtered.length && (
+                  <div ref={swipeThirdRef} className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: "scale(0.86) translateY(24px)", opacity: 0.25, background: "#1e1e3a", zIndex: 1 }}>
+                    <img src={getMainPhoto(filtered[swipeIndex + 2])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top", filter: "blur(2px) brightness(0.5)" }} />
+                  </div>
+                )}
+                {/* 2nd card (next) */}
+                {swipeIndex + 1 < filtered.length && (
+                  <div ref={swipeBackRef} className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: "scale(0.93) translateY(12px)", opacity: 0.5, background: "#1e1e3a", zIndex: 2 }}>
+                    <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
+                    <div className="absolute bottom-0 left-0 right-0 p-5">
+                      <h2 className="text-xl font-bold text-white">{filtered[swipeIndex + 1].name}</h2>
+                      <p className="text-xs mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex + 1].specialty}</p>
                     </div>
                   </div>
-                );
-              })()}
+                )}
+                {/* Active card (top) — driven by refs, not state */}
+                <div
+                  ref={swipeCardRef}
+                  className="absolute inset-0 rounded-3xl overflow-hidden cursor-grab card-stack-in"
+                  style={{
+                    boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+                    userSelect: "none",
+                    touchAction: "none",
+                    zIndex: 3,
+                  }}
+                  onTouchStart={handleSwipeTouchStart}
+                  onTouchMove={handleSwipeTouchMove}
+                  onTouchEnd={handleSwipeTouchEnd}
+                  onMouseDown={handleSwipeMouseDown}
+                >
+                  <img
+                    src={getMainPhoto(filtered[swipeIndex])}
+                    alt={filtered[swipeIndex].name}
+                    className="w-full h-full object-cover pointer-events-none"
+                    style={{ objectPosition: "top" }}
+                    draggable={false}
+                  />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
+
+                  {/* Green / Red glow overlay */}
+                  <div ref={swipeGlowRef} className="absolute inset-0 pointer-events-none rounded-3xl" style={{ background: "none" }} />
+
+                  {/* LIKE stamp */}
+                  <div ref={swipeLikeRef} className="absolute top-6 left-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
+                    display: "none", border: "4px solid #22c55e", color: "#22c55e", textShadow: "0 2px 12px rgba(34,197,94,0.4)",
+                  }}>LIKE</div>
+                  {/* NOPE stamp */}
+                  <div ref={swipeNopeRef} className="absolute top-6 right-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
+                    display: "none", border: "4px solid #f43f5e", color: "#f43f5e", textShadow: "0 2px 12px rgba(244,63,94,0.4)",
+                  }}>NOPE</div>
+
+                  {/* Swipe tutorial overlay */}
+                  {showSwipeTutorial && !swipeAnim && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 10 }}>
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="flex items-center gap-6 text-xs font-bold" style={{ color: "rgba(255,255,255,0.7)" }}>
+                          <span className="flex items-center gap-1"><X size={14} color="#f43f5e" /> NOPE</span>
+                          <span className="flex items-center gap-1">LIKE <Heart size={14} color="#22c55e" fill="#22c55e" /></span>
+                        </div>
+                        <div className="swipe-tutorial-hand" style={{ fontSize: 40 }}>
+                          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13"/></svg>
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Desliza para elegir</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card info */}
+                  <div className="absolute bottom-0 left-0 right-0 p-5">
+                    <h2 className="text-2xl font-bold text-white">{filtered[swipeIndex].name}</h2>
+                    <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex].specialty}</p>
+                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#b8b8d0" }}>
+                      <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {filtered[swipeIndex].rate}
+                    </p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openProfile(filtered[swipeIndex]); }}
+                      className="mt-3 text-xs font-semibold px-4 py-2 rounded-full"
+                      style={{ background: "rgba(139,92,246,0.3)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.4)" }}
+                    >
+                      Ver perfil completo
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {/* Action buttons — compact, no overflow */}
               <div className="flex items-center justify-center gap-5 py-3 flex-shrink-0">
