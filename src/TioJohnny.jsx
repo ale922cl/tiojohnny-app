@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -240,6 +240,32 @@ export default function TioJohnny() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ─── Hash routing: open profile from URL on load + back button ─────
+  const talentsRef = useRef([]);
+  talentsRef.current = talents;
+
+  useEffect(() => {
+    const openFromHash = () => {
+      const hash = window.location.hash; // e.g. #/modelo/5
+      const match = hash.match(/^#\/modelo\/(\d+)$/);
+      if (match) {
+        const id = parseInt(match[1]);
+        const t = talentsRef.current.find((x) => x.id === id);
+        if (t && !t.archived) {
+          setSelectedTalent(t);
+          setCarouselIndex(0);
+          setView("public");
+        }
+      } else {
+        setSelectedTalent(null);
+      }
+    };
+    // Open on first load (after talents are fetched)
+    if (talents.length > 0) openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, [talents.length]);
 
   const fetchTalents = async () => {
     setLoading(true);
@@ -493,14 +519,96 @@ export default function TioJohnny() {
     setTimeout(() => setPillPopCat(null), 350);
   }, []);
 
+  // Open profile with URL update
+  const openProfile = useCallback((t) => {
+    setSelectedTalent(t);
+    setCarouselIndex(0);
+    window.history.pushState(null, "", `#/modelo/${t.id}`);
+  }, []);
+
   // Animated modal close
   const closeDetail = useCallback(() => {
     setModalClosing(true);
     setTimeout(() => {
       setSelectedTalent(null);
       setModalClosing(false);
+      // Clear hash without triggering hashchange reload
+      window.history.pushState(null, "", window.location.pathname);
     }, 250);
   }, []);
+
+  // ─── Share handler ──────────────────────────────────────────────────
+  const [shareConfirm, setShareConfirm] = useState(null); // talent id that just got "copied" feedback
+  const handleShare = useCallback(async (t, e) => {
+    if (e) e.stopPropagation();
+    const url = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
+    const shareData = {
+      title: `${t.name} — TioJohnny.cl`,
+      text: `${t.name} · ${t.specialty}`,
+      url,
+    };
+    try {
+      if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareConfirm(t.id);
+        setTimeout(() => setShareConfirm(null), 1800);
+      }
+    } catch (err) {
+      // User cancelled share sheet — no-op
+      if (err.name !== "AbortError") {
+        try {
+          await navigator.clipboard.writeText(url);
+          setShareConfirm(t.id);
+          setTimeout(() => setShareConfirm(null), 1800);
+        } catch (_) {}
+      }
+    }
+  }, []);
+
+  // ─── Drag-to-reorder photos ───────────────────────────────────────
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  const handleDragStart = (idx) => {
+    setDragIdx(idx);
+  };
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    if (idx !== dragOverIdx) setDragOverIdx(idx);
+  };
+  const handleDrop = (idx) => {
+    if (dragIdx === null || dragIdx === idx) {
+      setDragIdx(null);
+      setDragOverIdx(null);
+      return;
+    }
+    setFormPhotos((prev) => {
+      const arr = [...prev];
+      const [moved] = arr.splice(dragIdx, 1);
+      arr.splice(idx, 0, moved);
+      return arr;
+    });
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+  const handleDragEnd = () => {
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+
+  // Touch-based reorder (mobile)
+  const [touchDragIdx, setTouchDragIdx] = useState(null);
+  const movePhoto = (from, to) => {
+    if (to < 0 || to >= formPhotos.length) return;
+    setFormPhotos((prev) => {
+      const arr = [...prev];
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return arr;
+    });
+  };
 
   // Split talents into active and archived for admin
   const activeTalents = talents.filter((t) => !t.archived);
@@ -590,17 +698,51 @@ export default function TioJohnny() {
             {editorId ? "Editar Perfil" : "Nuevo Perfil"}
           </h2>
 
-          {/* Photo Upload */}
+          {/* Photo Upload with drag-to-reorder */}
           <div className="mb-6">
             <label className="text-xs font-medium mb-2 block" style={{ color: "#9898b0" }}>Fotos del perfil</label>
             <div className="flex gap-3 flex-wrap">
               {formPhotos.map((photo, i) => (
-                <div key={i} className="relative rounded-xl overflow-hidden" style={{ width: 72, height: 96 }}>
-                  <img src={photo} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => removeFormPhoto(i)} className="absolute top-1 right-1 p-1 rounded-full" style={{ background: "rgba(244,63,94,0.9)" }}>
+                <div
+                  key={photo}
+                  draggable
+                  onDragStart={() => handleDragStart(i)}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={() => handleDrop(i)}
+                  onDragEnd={handleDragEnd}
+                  className="relative rounded-xl overflow-hidden transition-all"
+                  style={{
+                    width: 72,
+                    height: 96,
+                    opacity: dragIdx === i ? 0.4 : 1,
+                    transform: dragOverIdx === i && dragIdx !== i ? "scale(1.08)" : "scale(1)",
+                    outline: dragOverIdx === i && dragIdx !== i ? "2px solid #8B5CF6" : "none",
+                    outlineOffset: 2,
+                    cursor: "grab",
+                  }}
+                >
+                  <img src={photo} alt="" className="w-full h-full object-cover pointer-events-none" />
+                  {/* Drag handle */}
+                  <div className="absolute top-1 left-1 p-0.5 rounded" style={{ background: "rgba(0,0,0,0.5)" }}>
+                    <GripVertical size={10} color="#fff" />
+                  </div>
+                  {/* Delete */}
+                  <button onClick={(e) => { e.stopPropagation(); removeFormPhoto(i); }} className="absolute top-1 right-1 p-1 rounded-full" style={{ background: "rgba(244,63,94,0.9)" }}>
                     <X size={10} color="#fff" />
                   </button>
-                  {i === 0 && (
+                  {/* Move arrows for mobile */}
+                  {formPhotos.length > 1 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1 py-0.5" style={{ background: "rgba(0,0,0,0.6)" }}>
+                      <button onClick={(e) => { e.stopPropagation(); movePhoto(i, i - 1); }} disabled={i === 0} style={{ opacity: i === 0 ? 0.3 : 1 }}>
+                        <ChevronLeft size={12} color="#fff" />
+                      </button>
+                      <span className="text-white" style={{ fontSize: 8 }}>{i === 0 ? "PRINCIPAL" : i + 1}</span>
+                      <button onClick={(e) => { e.stopPropagation(); movePhoto(i, i + 1); }} disabled={i === formPhotos.length - 1} style={{ opacity: i === formPhotos.length - 1 ? 0.3 : 1 }}>
+                        <ChevronRight size={12} color="#fff" />
+                      </button>
+                    </div>
+                  )}
+                  {i === 0 && formPhotos.length <= 1 && (
                     <div className="absolute bottom-0 left-0 right-0 text-center py-0.5 text-white" style={{ background: "#8B5CF6", fontSize: 8 }}>PRINCIPAL</div>
                   )}
                 </div>
@@ -611,7 +753,7 @@ export default function TioJohnny() {
               </button>
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={handlePhotoUpload} className="hidden" />
-            <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>Las fotos se suben directamente a la nube. La primera es la principal.</p>
+            <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>Arrastra las fotos para reordenar. La primera es la principal. En móvil usa las flechas.</p>
           </div>
 
           {/* Form fields */}
@@ -845,9 +987,14 @@ export default function TioJohnny() {
         <div className="relative w-full" style={{ height: "55vh", minHeight: 300 }}>
           <img src={images[carouselIndex]} alt={t.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
           <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 50%, #12122a 100%)" }} />
-          <button onClick={closeDetail} className="absolute top-4 right-4 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
-            <X size={22} color="#fff" />
-          </button>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button onClick={(e) => handleShare(t, e)} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+              {shareConfirm === t.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
+            </button>
+            <button onClick={closeDetail} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+              <X size={22} color="#fff" />
+            </button>
+          </div>
           <button onClick={(e) => toggleFav(t.id, e)} className={`absolute top-4 left-4 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`} style={{ background: "rgba(0,0,0,0.5)" }}>
             <Heart size={22} color={favorites.includes(t.id) ? "#f43f5e" : "#fff"} fill={favorites.includes(t.id) ? "#f43f5e" : "none"} />
           </button>
@@ -922,30 +1069,39 @@ export default function TioJohnny() {
           )}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-5" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
+        <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-4" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
           {/* WhatsApp */}
           <a href={`https://wa.me/${(t.phone || "").replace("+", "")}`} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#25D366" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            <div className="w-13 h-13 rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#25D366" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
             </div>
             <span className="text-xs font-semibold" style={{ color: "#25D366" }}>WhatsApp</span>
           </a>
           {/* Call */}
           <a href={`tel:${t.phone}`} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#8B5CF6" }}>
-              <Phone size={22} color="#fff" />
+            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#8B5CF6" }}>
+              <Phone size={20} color="#fff" />
             </div>
             <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Llamar</span>
           </a>
           {/* Instagram (only if they have one) */}
           {t.instagram && (
             <a href={`https://instagram.com/${t.instagram.replace("@", "")}`} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-              <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+              <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
               </div>
               <span className="text-xs font-semibold" style={{ color: "#E1306C" }}>Instagram</span>
             </a>
           )}
+          {/* Share */}
+          <button onClick={(e) => handleShare(t, e)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: shareConfirm === t.id ? "#22c55e" : "#2a2a4a", transition: "background 0.3s ease" }}>
+              {shareConfirm === t.id ? <Check size={20} color="#fff" /> : <Share2 size={20} color="#fff" />}
+            </div>
+            <span className="text-xs font-semibold" style={{ color: shareConfirm === t.id ? "#22c55e" : "#9898b0", transition: "color 0.3s ease" }}>
+              {shareConfirm === t.id ? "Copiado!" : "Compartir"}
+            </span>
+          </button>
         </div>
       </div>
     );
@@ -1033,7 +1189,7 @@ export default function TioJohnny() {
           return (
             <div
               key={`${t.id}-${cardAnimKey}`}
-              onClick={() => { setSelectedTalent(t); setCarouselIndex(0); }}
+              onClick={() => openProfile(t)}
               className="card-enter rounded-2xl overflow-hidden cursor-pointer"
               style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s` }}
             >
