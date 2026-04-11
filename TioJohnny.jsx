@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -81,6 +81,89 @@ async function deletePhoto(url) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ANIMATION STYLES (injected once)
+// ═══════════════════════════════════════════════════════════════════════════════
+const ANIM_CSS = `
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(28px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fadeSlideDown {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(28px) scale(0.97); }
+}
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes modalSlideDown {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(100%); }
+}
+@keyframes heartPop {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.5); }
+  60%  { transform: scale(0.85); }
+  100% { transform: scale(1); }
+}
+@keyframes heartBurst {
+  0%   { opacity: 1; transform: scale(0.3); }
+  50%  { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+@keyframes flyHeart {
+  0%   { opacity: 1; transform: translate(0, 0) scale(1) rotate(0deg); }
+  30%  { opacity: 1; transform: translate(var(--fly-x1), var(--fly-y1)) scale(0.8) rotate(-15deg); }
+  70%  { opacity: 0.7; transform: translate(var(--fly-x2), var(--fly-y2)) scale(0.5) rotate(10deg); }
+  100% { opacity: 0; transform: translate(var(--fly-x3), var(--fly-y3)) scale(0.2) rotate(0deg); }
+}
+@keyframes floatUp {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.4); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pillPop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@keyframes cardPress {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+@keyframes favBadgeBounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.4); }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+@keyframes sparkle {
+  0%   { opacity: 0; transform: scale(0) rotate(0deg); }
+  50%  { opacity: 1; transform: scale(1) rotate(180deg); }
+  100% { opacity: 0; transform: scale(0) rotate(360deg); }
+}
+.card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+.modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+.modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
+.heart-pop   { animation: heartPop 0.4s cubic-bezier(0.22,1,0.36,1); }
+.pill-pop    { animation: pillPop 0.3s cubic-bezier(0.22,1,0.36,1); }
+.badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
+`;
+
+let animStyleInjected = false;
+function injectAnimStyles() {
+  if (animStyleInjected) return;
+  const style = document.createElement("style");
+  style.textContent = ANIM_CSS;
+  document.head.appendChild(style);
+  animStyleInjected = true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function TioJohnny() {
@@ -128,8 +211,20 @@ export default function TioJohnny() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ─── Animation state ────────────────────────────────────────────────
+  const [floatingHearts, setFloatingHearts] = useState([]);
+  const [heartPopId, setHeartPopId] = useState(null);
+  const [modalClosing, setModalClosing] = useState(false);
+  const [pillPopCat, setPillPopCat] = useState(null);
+  const [badgeBounce, setBadgeBounce] = useState(false);
+  const [cardAnimKey, setCardAnimKey] = useState(0); // triggers re-entrance animation
+  const favPillRef = useRef(null);
+
   const searchRef = useRef(null);
   const fileRef = useRef(null);
+
+  // Inject CSS animations once
+  useEffect(() => { injectAnimStyles(); }, []);
 
   // ─── Load data from Supabase on mount ───────────────────────────────
   useEffect(() => {
@@ -145,6 +240,32 @@ export default function TioJohnny() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ─── Hash routing: open profile from URL on load + back button ─────
+  const talentsRef = useRef([]);
+  talentsRef.current = talents;
+
+  useEffect(() => {
+    const openFromHash = () => {
+      const hash = window.location.hash; // e.g. #/modelo/5
+      const match = hash.match(/^#\/modelo\/(\d+)$/);
+      if (match) {
+        const id = parseInt(match[1]);
+        const t = talentsRef.current.find((x) => x.id === id);
+        if (t && !t.archived) {
+          setSelectedTalent(t);
+          setCarouselIndex(0);
+          setView("public");
+        }
+      } else {
+        setSelectedTalent(null);
+      }
+    };
+    // Open on first load (after talents are fetched)
+    if (talents.length > 0) openFromHash();
+    window.addEventListener("hashchange", openFromHash);
+    return () => window.removeEventListener("hashchange", openFromHash);
+  }, [talents.length]);
 
   const fetchTalents = async () => {
     setLoading(true);
@@ -166,7 +287,7 @@ export default function TioJohnny() {
 
   // Derived arrays for UI
   const categoryNames = categories.map((c) => c.name);
-  const publicCategories = ["Todas", ...categoryNames, "Favoritas"];
+  const publicCategories = ["Todas", "Favoritas", ...categoryNames];
 
   // ─── Category management handlers ─────────────────────────────────────
   const handleAddCategory = async () => {
@@ -196,10 +317,45 @@ export default function TioJohnny() {
     return photos.length > 0 ? photos : [generatePlaceholderSvg(t.id)];
   };
 
-  const toggleFav = (id, e) => {
+  const toggleFav = useCallback((id, e) => {
     e.stopPropagation();
+    const adding = !favorites.includes(id);
     setFavorites((prev) => prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]);
-  };
+
+    // Heart pop animation on the button
+    setHeartPopId(id);
+    setTimeout(() => setHeartPopId(null), 450);
+
+    if (adding) {
+      // Bounce the favorites badge
+      setBadgeBounce(true);
+      setTimeout(() => setBadgeBounce(false), 450);
+
+      // Spawn floating hearts from click position
+      const rect = e.currentTarget.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      // Get Favoritas pill position for fly target
+      const favRect = favPillRef.current?.getBoundingClientRect();
+      const tx = favRect ? favRect.left + favRect.width / 2 : window.innerWidth / 2;
+      const ty = favRect ? favRect.top + favRect.height / 2 : 60;
+
+      const newHearts = Array.from({ length: 6 }, (_, i) => ({
+        id: Date.now() + i,
+        x: cx + (Math.random() - 0.5) * 30,
+        y: cy + (Math.random() - 0.5) * 30,
+        tx, ty,
+        delay: i * 0.06,
+        size: 12 + Math.random() * 10,
+        color: ["#f43f5e", "#ec4899", "#f472b6", "#fb7185", "#ff6b9d", "#e11d48"][i],
+      }));
+      setFloatingHearts((prev) => [...prev, ...newHearts]);
+      setTimeout(() => {
+        setFloatingHearts((prev) => prev.filter((h) => !newHearts.some((n) => n.id === h.id)));
+      }, 1200);
+    }
+  }, [favorites]);
 
   // Helper: get categories array from a talent (supports old string format + new array format)
   const getTalentCategories = (t) => {
@@ -209,6 +365,7 @@ export default function TioJohnny() {
   };
 
   const filtered = talents.filter((t) => {
+    if (t.archived) return false; // never show archived in public
     const talentCats = getTalentCategories(t);
     const matchCat = activeCategory === "Todas" || (activeCategory === "Favoritas" ? favorites.includes(t.id) : talentCats.includes(activeCategory));
     const matchSearch = !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.specialty || "").toLowerCase().includes(searchQuery.toLowerCase());
@@ -337,6 +494,11 @@ export default function TioJohnny() {
     setView("admin");
   };
 
+  const handleArchive = async (id, archived) => {
+    await supabase.from("talents").update({ archived }).eq("id", id);
+    await fetchTalents();
+  };
+
   const handleDelete = async (id) => {
     // Delete photos from storage first
     const talent = talents.find((t) => t.id === id);
@@ -348,6 +510,109 @@ export default function TioJohnny() {
     await supabase.from("talents").delete().eq("id", id);
     await fetchTalents();
   };
+
+  // Animated category switching
+  const switchCategory = useCallback((cat) => {
+    setActiveCategory(cat);
+    setCardAnimKey((k) => k + 1); // re-trigger entrance animations
+    setPillPopCat(cat);
+    setTimeout(() => setPillPopCat(null), 350);
+  }, []);
+
+  // Open profile with URL update
+  const openProfile = useCallback((t) => {
+    setSelectedTalent(t);
+    setCarouselIndex(0);
+    window.history.pushState(null, "", `#/modelo/${t.id}`);
+  }, []);
+
+  // Animated modal close
+  const closeDetail = useCallback(() => {
+    setModalClosing(true);
+    setTimeout(() => {
+      setSelectedTalent(null);
+      setModalClosing(false);
+      // Clear hash without triggering hashchange reload
+      window.history.pushState(null, "", window.location.pathname);
+    }, 250);
+  }, []);
+
+  // ─── Share handler ──────────────────────────────────────────────────
+  const [shareConfirm, setShareConfirm] = useState(null); // talent id that just got "copied" feedback
+  const handleShare = useCallback(async (t, e) => {
+    if (e) e.stopPropagation();
+    const url = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
+    const shareData = {
+      title: `${t.name} — TioJohnny.cl`,
+      text: `${t.name} · ${t.specialty}`,
+      url,
+    };
+    try {
+      if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareConfirm(t.id);
+        setTimeout(() => setShareConfirm(null), 1800);
+      }
+    } catch (err) {
+      // User cancelled share sheet — no-op
+      if (err.name !== "AbortError") {
+        try {
+          await navigator.clipboard.writeText(url);
+          setShareConfirm(t.id);
+          setTimeout(() => setShareConfirm(null), 1800);
+        } catch (_) {}
+      }
+    }
+  }, []);
+
+  // ─── Drag-to-reorder photos ───────────────────────────────────────
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  const handleDragStart = (idx) => {
+    setDragIdx(idx);
+  };
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    if (idx !== dragOverIdx) setDragOverIdx(idx);
+  };
+  const handleDrop = (idx) => {
+    if (dragIdx === null || dragIdx === idx) {
+      setDragIdx(null);
+      setDragOverIdx(null);
+      return;
+    }
+    setFormPhotos((prev) => {
+      const arr = [...prev];
+      const [moved] = arr.splice(dragIdx, 1);
+      arr.splice(idx, 0, moved);
+      return arr;
+    });
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+  const handleDragEnd = () => {
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+
+  // Touch-based reorder (mobile)
+  const [touchDragIdx, setTouchDragIdx] = useState(null);
+  const movePhoto = (from, to) => {
+    if (to < 0 || to >= formPhotos.length) return;
+    setFormPhotos((prev) => {
+      const arr = [...prev];
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return arr;
+    });
+  };
+
+  // Split talents into active and archived for admin
+  const activeTalents = talents.filter((t) => !t.archived);
+  const archivedTalents = talents.filter((t) => t.archived);
 
   // ─── Shared styles ────────────────────────────────────────────────────
   const inputStyle = { background: "#12122a", border: "1px solid #2a2a4a" };
@@ -433,17 +698,51 @@ export default function TioJohnny() {
             {editorId ? "Editar Perfil" : "Nuevo Perfil"}
           </h2>
 
-          {/* Photo Upload */}
+          {/* Photo Upload with drag-to-reorder */}
           <div className="mb-6">
             <label className="text-xs font-medium mb-2 block" style={{ color: "#9898b0" }}>Fotos del perfil</label>
             <div className="flex gap-3 flex-wrap">
               {formPhotos.map((photo, i) => (
-                <div key={i} className="relative rounded-xl overflow-hidden" style={{ width: 72, height: 96 }}>
-                  <img src={photo} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => removeFormPhoto(i)} className="absolute top-1 right-1 p-1 rounded-full" style={{ background: "rgba(244,63,94,0.9)" }}>
+                <div
+                  key={photo}
+                  draggable
+                  onDragStart={() => handleDragStart(i)}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={() => handleDrop(i)}
+                  onDragEnd={handleDragEnd}
+                  className="relative rounded-xl overflow-hidden transition-all"
+                  style={{
+                    width: 72,
+                    height: 96,
+                    opacity: dragIdx === i ? 0.4 : 1,
+                    transform: dragOverIdx === i && dragIdx !== i ? "scale(1.08)" : "scale(1)",
+                    outline: dragOverIdx === i && dragIdx !== i ? "2px solid #8B5CF6" : "none",
+                    outlineOffset: 2,
+                    cursor: "grab",
+                  }}
+                >
+                  <img src={photo} alt="" className="w-full h-full object-cover pointer-events-none" />
+                  {/* Drag handle */}
+                  <div className="absolute top-1 left-1 p-0.5 rounded" style={{ background: "rgba(0,0,0,0.5)" }}>
+                    <GripVertical size={10} color="#fff" />
+                  </div>
+                  {/* Delete */}
+                  <button onClick={(e) => { e.stopPropagation(); removeFormPhoto(i); }} className="absolute top-1 right-1 p-1 rounded-full" style={{ background: "rgba(244,63,94,0.9)" }}>
                     <X size={10} color="#fff" />
                   </button>
-                  {i === 0 && (
+                  {/* Move arrows for mobile */}
+                  {formPhotos.length > 1 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1 py-0.5" style={{ background: "rgba(0,0,0,0.6)" }}>
+                      <button onClick={(e) => { e.stopPropagation(); movePhoto(i, i - 1); }} disabled={i === 0} style={{ opacity: i === 0 ? 0.3 : 1 }}>
+                        <ChevronLeft size={12} color="#fff" />
+                      </button>
+                      <span className="text-white" style={{ fontSize: 8 }}>{i === 0 ? "PRINCIPAL" : i + 1}</span>
+                      <button onClick={(e) => { e.stopPropagation(); movePhoto(i, i + 1); }} disabled={i === formPhotos.length - 1} style={{ opacity: i === formPhotos.length - 1 ? 0.3 : 1 }}>
+                        <ChevronRight size={12} color="#fff" />
+                      </button>
+                    </div>
+                  )}
+                  {i === 0 && formPhotos.length <= 1 && (
                     <div className="absolute bottom-0 left-0 right-0 text-center py-0.5 text-white" style={{ background: "#8B5CF6", fontSize: 8 }}>PRINCIPAL</div>
                   )}
                 </div>
@@ -454,7 +753,7 @@ export default function TioJohnny() {
               </button>
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={handlePhotoUpload} className="hidden" />
-            <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>Las fotos se suben directamente a la nube. La primera es la principal.</p>
+            <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>Arrastra las fotos para reordenar. La primera es la principal. En móvil usa las flechas.</p>
           </div>
 
           {/* Form fields */}
@@ -603,8 +902,10 @@ export default function TioJohnny() {
           </div>
         </div>
 
-        <div className="px-4 pb-6 space-y-3">
-          {talents.map((t) => (
+        {/* ── Active Talents ── */}
+        <div className="px-4 pb-4 space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#8B5CF6" }}>Activas ({activeTalents.length})</h3>
+          {activeTalents.map((t) => (
             <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "#1e1e3a" }}>
               <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
                 <img src={getMainPhoto(t)} alt={t.name} className="w-full h-full object-cover" />
@@ -623,19 +924,50 @@ export default function TioJohnny() {
                 <button onClick={() => openEditor(t)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }}>
                   <Edit3 size={16} color="#8B5CF6" />
                 </button>
-                <button onClick={() => handleDelete(t.id)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }}>
-                  <Trash2 size={16} color="#f43f5e" />
+                <button onClick={() => handleArchive(t.id, true)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }} title="Archivar">
+                  <Archive size={16} color="#f59e0b" />
                 </button>
               </div>
             </div>
           ))}
-          {talents.length === 0 && (
+          {activeTalents.length === 0 && (
             <div className="text-center py-16">
               <User size={48} style={{ color: "#2a2a4a" }} className="mx-auto" />
               <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No hay perfiles. Agrega tu primera modelo.</p>
             </div>
           )}
         </div>
+
+        {/* ── Archived Talents ── */}
+        {archivedTalents.length > 0 && (
+          <div className="px-4 pb-6 space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#f59e0b" }}>Archivadas ({archivedTalents.length})</h3>
+            {archivedTalents.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "#1e1e3a", opacity: 0.7 }}>
+                <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
+                  <img src={getMainPhoto(t)} alt={t.name} className="w-full h-full object-cover" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-white truncate">{t.name}</h3>
+                  <p className="text-xs truncate" style={{ color: "#f59e0b" }}>Archivada</p>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {getTalentCategories(t).map((c) => (
+                      <span key={c} className="text-white px-1.5 py-0.5 rounded" style={{ fontSize: 9, background: "#4a4a6a" }}>{c}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button onClick={() => handleArchive(t.id, false)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }} title="Restaurar">
+                    <ArchiveRestore size={16} color="#22c55e" />
+                  </button>
+                  <button onClick={() => handleDelete(t.id)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }} title="Eliminar permanentemente">
+                    <Trash2 size={16} color="#f43f5e" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -651,14 +983,19 @@ export default function TioJohnny() {
     const experienceList = (t.experience || "").split("\n").filter(Boolean);
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "#12122a" }}>
+      <div className={`fixed inset-0 z-50 flex flex-col ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "#12122a" }}>
         <div className="relative w-full" style={{ height: "55vh", minHeight: 300 }}>
           <img src={images[carouselIndex]} alt={t.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
           <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 50%, #12122a 100%)" }} />
-          <button onClick={() => setSelectedTalent(null)} className="absolute top-4 right-4 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
-            <X size={22} color="#fff" />
-          </button>
-          <button onClick={(e) => toggleFav(t.id, e)} className="absolute top-4 left-4 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button onClick={(e) => handleShare(t, e)} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+              {shareConfirm === t.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
+            </button>
+            <button onClick={closeDetail} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+              <X size={22} color="#fff" />
+            </button>
+          </div>
+          <button onClick={(e) => toggleFav(t.id, e)} className={`absolute top-4 left-4 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`} style={{ background: "rgba(0,0,0,0.5)" }}>
             <Heart size={22} color={favorites.includes(t.id) ? "#f43f5e" : "#fff"} fill={favorites.includes(t.id) ? "#f43f5e" : "none"} />
           </button>
           {imgCount > 1 && (
@@ -732,30 +1069,39 @@ export default function TioJohnny() {
           )}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-5" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
+        <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-4" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
           {/* WhatsApp */}
           <a href={`https://wa.me/${(t.phone || "").replace("+", "")}`} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#25D366" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            <div className="w-13 h-13 rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#25D366" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
             </div>
             <span className="text-xs font-semibold" style={{ color: "#25D366" }}>WhatsApp</span>
           </a>
           {/* Call */}
           <a href={`tel:${t.phone}`} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#8B5CF6" }}>
-              <Phone size={22} color="#fff" />
+            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#8B5CF6" }}>
+              <Phone size={20} color="#fff" />
             </div>
             <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Llamar</span>
           </a>
           {/* Instagram (only if they have one) */}
           {t.instagram && (
             <a href={`https://instagram.com/${t.instagram.replace("@", "")}`} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-              <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+              <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
               </div>
               <span className="text-xs font-semibold" style={{ color: "#E1306C" }}>Instagram</span>
             </a>
           )}
+          {/* Share */}
+          <button onClick={(e) => handleShare(t, e)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: shareConfirm === t.id ? "#22c55e" : "#2a2a4a", transition: "background 0.3s ease" }}>
+              {shareConfirm === t.id ? <Check size={20} color="#fff" /> : <Share2 size={20} color="#fff" />}
+            </div>
+            <span className="text-xs font-semibold" style={{ color: shareConfirm === t.id ? "#22c55e" : "#9898b0", transition: "color 0.3s ease" }}>
+              {shareConfirm === t.id ? "Copiado!" : "Compartir"}
+            </span>
+          </button>
         </div>
       </div>
     );
@@ -805,10 +1151,28 @@ export default function TioJohnny() {
       <div className="flex gap-2 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
         {publicCategories.map((cat) => {
           const active = activeCategory === cat;
+          const isFavPill = cat === "Favoritas";
           return (
-            <button key={cat} onClick={() => setActiveCategory(cat)} className="flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1" style={{ background: active ? (cat === "Favoritas" ? "#f43f5e" : "#8B5CF6") : "#1e1e3a", color: active ? "#fff" : "#9898b0", border: active ? "none" : "1px solid #2a2a4a" }}>
-              {cat === "Favoritas" && <Heart size={10} fill={active ? "#fff" : "none"} />}
-              {cat}{cat === "Favoritas" && favorites.length > 0 ? ` (${favorites.length})` : ""}
+            <button
+              key={cat}
+              ref={isFavPill ? favPillRef : null}
+              onClick={() => switchCategory(cat)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1 ${pillPopCat === cat ? "pill-pop" : ""}`}
+              style={{
+                background: active ? (isFavPill ? "#f43f5e" : "#8B5CF6") : "#1e1e3a",
+                color: active ? "#fff" : "#9898b0",
+                border: active ? "none" : "1px solid #2a2a4a",
+                transition: "background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease",
+                boxShadow: active ? (isFavPill ? "0 0 16px rgba(244,63,94,0.4)" : "0 0 16px rgba(139,92,246,0.4)") : "none",
+              }}
+            >
+              {isFavPill && <Heart size={10} fill={active ? "#fff" : "none"} />}
+              {cat}
+              {isFavPill && favorites.length > 0 && (
+                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-white ${badgeBounce ? "badge-bounce" : ""}`} style={{ fontSize: 9, background: active ? "rgba(255,255,255,0.25)" : "#f43f5e", minWidth: 18, textAlign: "center" }}>
+                  {favorites.length}
+                </span>
+              )}
             </button>
           );
         })}
@@ -820,14 +1184,23 @@ export default function TioJohnny() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 px-3 pb-8">
-        {filtered.map((t) => {
+        {filtered.map((t, idx) => {
           const isFav = favorites.includes(t.id);
           return (
-            <div key={t.id} onClick={() => { setSelectedTalent(t); setCarouselIndex(0); }} className="rounded-2xl overflow-hidden cursor-pointer transition-transform active:scale-95" style={{ background: "#1e1e3a" }}>
+            <div
+              key={`${t.id}-${cardAnimKey}`}
+              onClick={() => openProfile(t)}
+              className="card-enter rounded-2xl overflow-hidden cursor-pointer"
+              style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s` }}
+            >
               <div className="relative" style={{ paddingBottom: "130%" }}>
                 <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top" }} loading="lazy" />
                 <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
-                <button onClick={(e) => toggleFav(t.id, e)} className="absolute top-2 right-2 p-2 rounded-full transition-all" style={{ background: "rgba(0,0,0,0.35)" }}>
+                <button
+                  onClick={(e) => toggleFav(t.id, e)}
+                  className={`absolute top-2 right-2 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`}
+                  style={{ background: "rgba(0,0,0,0.35)", transition: "transform 0.2s ease" }}
+                >
                   <Heart size={16} color={isFav ? "#f43f5e" : "#fff"} fill={isFav ? "#f43f5e" : "none"} />
                 </button>
                 <div className="absolute bottom-0 left-0 right-0 p-3">
@@ -845,13 +1218,44 @@ export default function TioJohnny() {
         <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
           <Search size={48} style={{ color: "#2a2a4a" }} />
           <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No se encontraron modelos.</p>
-          <button onClick={() => { setActiveCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
+          <button onClick={() => { switchCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
             Ver todas
           </button>
         </div>
       )}
 
       {renderDetail()}
+
+      {/* ── Floating Hearts Overlay ── */}
+      {floatingHearts.length > 0 && (
+        <div className="fixed inset-0 pointer-events-none z-[9999]">
+          {floatingHearts.map((h) => {
+            const dx = h.tx - h.x;
+            const dy = h.ty - h.y;
+            return (
+              <div
+                key={h.id}
+                style={{
+                  position: "absolute",
+                  left: h.x,
+                  top: h.y,
+                  "--fly-x1": `${dx * 0.2 + (Math.random() - 0.5) * 60}px`,
+                  "--fly-y1": `${dy * 0.3 - 30}px`,
+                  "--fly-x2": `${dx * 0.7 + (Math.random() - 0.5) * 40}px`,
+                  "--fly-y2": `${dy * 0.7}px`,
+                  "--fly-x3": `${dx}px`,
+                  "--fly-y3": `${dy}px`,
+                  animation: `flyHeart 0.9s cubic-bezier(0.22,1,0.36,1) ${h.delay}s both`,
+                }}
+              >
+                <svg width={h.size} height={h.size} viewBox="0 0 24 24" fill={h.color}>
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
