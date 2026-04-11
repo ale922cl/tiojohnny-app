@@ -171,19 +171,21 @@ const ANIM_CSS = `
   50%  { opacity: 1; transform: scale(1) rotate(180deg); }
   100% { opacity: 0; transform: scale(0) rotate(360deg); }
 }
-@keyframes swipeRight {
-  to { opacity: 0; transform: translateX(150%) rotate(20deg); }
-}
-@keyframes swipeLeft {
-  to { opacity: 0; transform: translateX(-150%) rotate(-20deg); }
-}
 @keyframes cardStackIn {
-  from { opacity: 0; transform: scale(0.9); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
 }
-.swipe-right { animation: swipeRight 0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
-.swipe-left  { animation: swipeLeft 0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
-.card-stack-in { animation: cardStackIn 0.3s cubic-bezier(0.22,1,0.36,1) both; }
+.card-stack-in { animation: cardStackIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+@keyframes swipeTutorialHand {
+  0%   { opacity: 0; transform: translate(0, 20px); }
+  15%  { opacity: 1; transform: translate(0, 0); }
+  35%  { opacity: 1; transform: translate(60px, -5px) rotate(5deg); }
+  50%  { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  70%  { opacity: 1; transform: translate(-60px, -5px) rotate(-5deg); }
+  85%  { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  100% { opacity: 0; transform: translate(0, 20px); }
+}
+.swipe-tutorial-hand { animation: swipeTutorialHand 2.5s cubic-bezier(0.4,0,0.2,1) forwards; }
 .card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
@@ -270,6 +272,8 @@ export default function TioJohnny() {
   const [swipeDelta, setSwipeDelta] = useState({ x: 0, y: 0 });
   const [swiping, setSwiping] = useState(false);
   const [swipeAnim, setSwipeAnim] = useState(null); // "left" | "right" | null
+  const [showSwipeTutorial, setShowSwipeTutorial] = useState(false);
+  const swipeTutorialShown = useRef(false);
   const swipeStartRef = useRef(null);
   const SWIPE_THRESHOLD = 80;
 
@@ -889,11 +893,13 @@ export default function TioJohnny() {
   };
 
   const doSwipe = (dir) => {
+    const flyX = dir === "right" ? window.innerWidth * 1.5 : -window.innerWidth * 1.5;
+    const flyRot = dir === "right" ? 25 : -25;
     setSwipeAnim(dir);
+    setSwipeDelta({ x: flyX, y: 0 });
     const currentTalent = filtered[swipeIndex];
     if (currentTalent) trackEvent(dir === "right" ? "swipe_like" : "swipe_skip", currentTalent.id);
     if (dir === "right" && currentTalent) {
-      // Add to favorites
       if (!favorites.includes(currentTalent.id)) {
         setFavorites((prev) => [...prev, currentTalent.id]);
         setBadgeBounce(true);
@@ -904,7 +910,7 @@ export default function TioJohnny() {
       setSwipeAnim(null);
       setSwipeDelta({ x: 0, y: 0 });
       setSwipeIndex((i) => Math.min(i + 1, filtered.length));
-    }, 350);
+    }, 400);
   };
 
   const undoSwipe = () => {
@@ -1871,7 +1877,7 @@ export default function TioJohnny() {
             <Grid3X3 size={12} />
           </button>
           <button
-            onClick={() => { setViewMode("swipe"); setSwipeIndex(0); }}
+            onClick={() => { setViewMode("swipe"); setSwipeIndex(0); if (!swipeTutorialShown.current) { setShowSwipeTutorial(true); swipeTutorialShown.current = true; setTimeout(() => setShowSwipeTutorial(false), 2800); } }}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
             style={{ background: viewMode === "swipe" ? "linear-gradient(135deg, #8B5CF6, #ec4899)" : "transparent", color: viewMode === "swipe" ? "#fff" : "#6b6b90" }}
           >
@@ -1928,20 +1934,34 @@ export default function TioJohnny() {
 
       {/* ═══ SWIPE VIEW ═══ */}
       {viewMode === "swipe" && (
-        <div className="flex flex-col items-center" style={{ height: "calc(100vh - 140px)", height: "calc(100dvh - 140px)", overflow: "hidden" }}>
+        <div className="flex flex-col items-center" style={{ height: "calc(100dvh - 140px)", overflow: "hidden" }}>
           {swipeIndex < filtered.length ? (
             <>
               {/* Card stack — fills available space minus buttons */}
               {(() => {
-                // Calculate how much the drag has progressed toward threshold
                 const dragProgress = Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1);
-                // Back card interpolates: scale 0.92→1, opacity 0.4→1, translateY 16→0
-                const backScale = 0.92 + dragProgress * 0.08;
-                const backOpacity = 0.4 + dragProgress * 0.6;
-                const backY = 16 - dragProgress * 16;
+                const clampedDragProgress = swipeAnim ? 1 : dragProgress;
+                // Back card interpolates: scale 0.93→1, opacity 0.5→1, translateY 12→0
+                const backScale = 0.93 + clampedDragProgress * 0.07;
+                const backOpacity = 0.5 + clampedDragProgress * 0.5;
+                const backY = 12 - clampedDragProgress * 12;
+                // 3rd card
+                const thirdScale = 0.86 + clampedDragProgress * 0.04;
+                const thirdY = 24 - clampedDragProgress * 8;
+                const thirdOpacity = 0.25 + clampedDragProgress * 0.15;
                 return (
                   <div className="relative mt-2 flex-1" style={{ width: "88vw", maxWidth: 400, minHeight: 0 }}>
-                    {/* Background card (next) — reacts to drag */}
+                    {/* 4th card shadow (static, just a shape) */}
+                    {swipeIndex + 3 < filtered.length && (
+                      <div className="absolute inset-0 rounded-3xl" style={{ transform: "scale(0.80) translateY(34px)", opacity: 0.1, background: "#2a2a4a", zIndex: 0 }} />
+                    )}
+                    {/* 3rd card (hint) */}
+                    {swipeIndex + 2 < filtered.length && (
+                      <div className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: `scale(${thirdScale}) translateY(${thirdY}px)`, opacity: thirdOpacity, transition: swiping ? "none" : "all 0.4s cubic-bezier(0.22,1,0.36,1)", background: "#1e1e3a", zIndex: 1 }}>
+                        <img src={getMainPhoto(filtered[swipeIndex + 2])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top", filter: "blur(2px) brightness(0.5)" }} />
+                      </div>
+                    )}
+                    {/* 2nd card (next) — reacts to drag */}
                     {swipeIndex + 1 < filtered.length && (
                       <div
                         className="absolute inset-0 rounded-3xl overflow-hidden"
@@ -1950,6 +1970,7 @@ export default function TioJohnny() {
                           opacity: backOpacity,
                           transition: swiping ? "none" : "all 0.4s cubic-bezier(0.22,1,0.36,1)",
                           background: "#1e1e3a",
+                          zIndex: 2,
                         }}
                       >
                         <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
@@ -1960,20 +1981,17 @@ export default function TioJohnny() {
                         </div>
                       </div>
                     )}
-                    {/* 3rd card hint */}
-                    {swipeIndex + 2 < filtered.length && (
-                      <div className="absolute inset-0 rounded-3xl" style={{ transform: `scale(${0.85 + dragProgress * 0.04}) translateY(${28 - dragProgress * 8}px)`, opacity: 0.2 + dragProgress * 0.15, transition: swiping ? "none" : "all 0.4s ease", background: "#1e1e3a" }} />
-                    )}
-                    {/* Active card */}
+                    {/* Active card (top) */}
                     <div
-                      className={`absolute inset-0 rounded-3xl overflow-hidden cursor-grab ${swipeAnim ? "" : "card-stack-in"} ${swipeAnim === "right" ? "swipe-right" : swipeAnim === "left" ? "swipe-left" : ""}`}
+                      className={`absolute inset-0 rounded-3xl overflow-hidden cursor-grab ${!swipeAnim && swipeDelta.x === 0 ? "card-stack-in" : ""}`}
                       style={{
-                        transform: swipeAnim ? undefined : `translateX(${swipeDelta.x}px) rotate(${swipeDelta.x * 0.08}deg)`,
-                        transition: swiping ? "none" : "transform 0.35s cubic-bezier(0.22,1,0.36,1)",
-                        boxShadow: `0 8px 40px rgba(0,0,0,0.4)`,
+                        transform: `translateX(${swipeDelta.x}px) rotate(${swipeDelta.x * 0.06}deg)`,
+                        transition: swiping ? "none" : "transform 0.4s cubic-bezier(0.22,1,0.36,1)",
+                        boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
                         userSelect: "none",
                         touchAction: "none",
-                        zIndex: 2,
+                        zIndex: 3,
+                        opacity: swipeAnim ? Math.max(1 - Math.abs(swipeDelta.x) / (window.innerWidth * 0.8), 0) : 1,
                       }}
                       onTouchStart={handleSwipeTouchStart}
                       onTouchMove={handleSwipeTouchMove}
@@ -1991,35 +2009,51 @@ export default function TioJohnny() {
 
                       {/* Green / Red glow overlay based on drag direction */}
                       <div className="absolute inset-0 pointer-events-none rounded-3xl" style={{
-                        background: swipeDelta.x > 20
-                          ? `linear-gradient(135deg, rgba(34,197,94,${dragProgress * 0.15}) 0%, transparent 60%)`
-                          : swipeDelta.x < -20
-                            ? `linear-gradient(225deg, rgba(244,63,94,${dragProgress * 0.15}) 0%, transparent 60%)`
+                        background: swipeDelta.x > 15
+                          ? `linear-gradient(135deg, rgba(34,197,94,${Math.min(clampedDragProgress * 0.25, 0.25)}) 0%, transparent 60%)`
+                          : swipeDelta.x < -15
+                            ? `linear-gradient(225deg, rgba(244,63,94,${Math.min(clampedDragProgress * 0.25, 0.25)}) 0%, transparent 60%)`
                             : "none",
                         transition: swiping ? "none" : "background 0.2s ease",
                       }} />
 
                       {/* LIKE / NOPE stamps */}
-                      {swipeDelta.x > 25 && (
+                      {swipeDelta.x > 20 && (
                         <div className="absolute top-6 left-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
                           border: "4px solid #22c55e",
                           color: "#22c55e",
-                          opacity: Math.min(dragProgress, 1),
-                          transform: `rotate(-15deg) scale(${0.8 + dragProgress * 0.2})`,
-                          textShadow: "0 2px 8px rgba(34,197,94,0.3)",
+                          opacity: Math.min(clampedDragProgress * 1.2, 1),
+                          transform: `rotate(-15deg) scale(${0.8 + clampedDragProgress * 0.2})`,
+                          textShadow: "0 2px 12px rgba(34,197,94,0.4)",
                         }}>
                           LIKE
                         </div>
                       )}
-                      {swipeDelta.x < -25 && (
+                      {swipeDelta.x < -20 && (
                         <div className="absolute top-6 right-6 px-5 py-2 rounded-xl font-extrabold text-2xl" style={{
                           border: "4px solid #f43f5e",
                           color: "#f43f5e",
-                          opacity: Math.min(dragProgress, 1),
-                          transform: `rotate(15deg) scale(${0.8 + dragProgress * 0.2})`,
-                          textShadow: "0 2px 8px rgba(244,63,94,0.3)",
+                          opacity: Math.min(clampedDragProgress * 1.2, 1),
+                          transform: `rotate(15deg) scale(${0.8 + clampedDragProgress * 0.2})`,
+                          textShadow: "0 2px 12px rgba(244,63,94,0.4)",
                         }}>
                           NOPE
+                        </div>
+                      )}
+
+                      {/* Swipe tutorial overlay */}
+                      {showSwipeTutorial && !swiping && !swipeAnim && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 10 }}>
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="flex items-center gap-6 text-xs font-bold" style={{ color: "rgba(255,255,255,0.7)" }}>
+                              <span className="flex items-center gap-1"><X size={14} color="#f43f5e" /> NOPE</span>
+                              <span className="flex items-center gap-1">LIKE <Heart size={14} color="#22c55e" fill="#22c55e" /></span>
+                            </div>
+                            <div className="swipe-tutorial-hand" style={{ fontSize: 40 }}>
+                              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v6"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 13"/></svg>
+                            </div>
+                            <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>Desliza para elegir</span>
+                          </div>
                         </div>
                       )}
 
