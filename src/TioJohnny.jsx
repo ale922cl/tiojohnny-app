@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -78,6 +78,31 @@ async function deletePhoto(url) {
   if (idx === -1) return;
   const path = url.substring(idx + marker.length);
   await supabase.storage.from("talent-photos").remove([path]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANALYTICS HELPER
+// ═══════════════════════════════════════════════════════════════════════════════
+let _sessionId = null;
+function getSessionId() {
+  if (_sessionId) return _sessionId;
+  try { _sessionId = sessionStorage.getItem("tj_sid"); } catch (e) {}
+  if (!_sessionId) {
+    _sessionId = "s_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    try { sessionStorage.setItem("tj_sid", _sessionId); } catch (e) {}
+  }
+  return _sessionId;
+}
+
+function trackEvent(eventType, talentId = null, category = null) {
+  const payload = {
+    event_type: eventType,
+    session_id: getSessionId(),
+  };
+  if (talentId) payload.talent_id = talentId;
+  if (category) payload.category = category;
+  // Fire and forget — don't block UI
+  supabase.from("analytics_events").insert([payload]).then(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -234,6 +259,11 @@ export default function TioJohnny() {
   const [csvResult, setCsvResult] = useState(null); // { added: N, errors: N }
   const csvFileRef = useRef(null);
 
+  // ─── Analytics state ───────────────────────────────────────────────
+  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "analytics"
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
   const [swipeIndex, setSwipeIndex] = useState(0);
@@ -262,6 +292,7 @@ export default function TioJohnny() {
   useEffect(() => {
     fetchTalents();
     fetchCategories();
+    trackEvent("page_view");
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
@@ -371,6 +402,7 @@ export default function TioJohnny() {
     e.stopPropagation();
     const adding = !favorites.includes(id);
     setFavorites((prev) => prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]);
+    trackEvent(adding ? "favorite" : "unfavorite", id);
 
     // Heart pop animation on the button
     setHeartPopId(id);
@@ -682,12 +714,92 @@ export default function TioJohnny() {
     setCsvPreview([]);
   };
 
+  // ─── Analytics data fetch ──────────────────────────────────────────
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekAgo = new Date(now - 7 * 86400000).toISOString();
+    const monthAgo = new Date(now - 30 * 86400000).toISOString();
+
+    // Fetch all events (last 30 days for efficiency)
+    const { data: events } = await supabase
+      .from("analytics_events")
+      .select("*")
+      .gte("created_at", monthAgo)
+      .order("created_at", { ascending: false });
+
+    if (!events) { setAnalyticsLoading(false); return; }
+
+    // Unique visitors (unique session_ids)
+    const allSessions = new Set(events.map((e) => e.session_id));
+    const todaySessions = new Set(events.filter((e) => e.created_at >= todayStart).map((e) => e.session_id));
+    const weekSessions = new Set(events.filter((e) => e.created_at >= weekAgo).map((e) => e.session_id));
+
+    // Page views
+    const pageViews = events.filter((e) => e.event_type === "page_view");
+    const todayViews = pageViews.filter((e) => e.created_at >= todayStart).length;
+    const weekViews = pageViews.filter((e) => e.created_at >= weekAgo).length;
+
+    // Profile views — top 10
+    const profileViews = events.filter((e) => e.event_type === "profile_view" && e.talent_id);
+    const viewCounts = {};
+    profileViews.forEach((e) => { viewCounts[e.talent_id] = (viewCounts[e.talent_id] || 0) + 1; });
+    const topViewed = Object.entries(viewCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+    // Favorites — top 10
+    const favEvents = events.filter((e) => e.event_type === "favorite" && e.talent_id);
+    const favCounts = {};
+    favEvents.forEach((e) => { favCounts[e.talent_id] = (favCounts[e.talent_id] || 0) + 1; });
+    const topFavorited = Object.entries(favCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+    // Shares — top 10
+    const shareEvents = events.filter((e) => e.event_type === "share" && e.talent_id);
+    const shareCounts = {};
+    shareEvents.forEach((e) => { shareCounts[e.talent_id] = (shareCounts[e.talent_id] || 0) + 1; });
+    const topShared = Object.entries(shareCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+    // Pasarela stats
+    const swipeLikes = events.filter((e) => e.event_type === "swipe_like").length;
+    const swipeSkips = events.filter((e) => e.event_type === "swipe_skip").length;
+    const swipeTotal = swipeLikes + swipeSkips;
+
+    // Popular categories
+    const catEvents = events.filter((e) => e.event_type === "category_view" && e.category);
+    const catCounts = {};
+    catEvents.forEach((e) => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
+    const topCategories = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+    // Daily visitors (last 7 days)
+    const dailyVisitors = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now - i * 86400000);
+      const dayStr = d.toISOString().slice(0, 10);
+      const daySessions = new Set(
+        events.filter((e) => e.created_at.slice(0, 10) === dayStr).map((e) => e.session_id)
+      );
+      dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: daySessions.size });
+    }
+
+    setAnalyticsData({
+      visitors: { today: todaySessions.size, week: weekSessions.size, month: allSessions.size },
+      views: { today: todayViews, week: weekViews, month: pageViews.length },
+      topViewed, topFavorited, topShared,
+      pasarela: { likes: swipeLikes, skips: swipeSkips, total: swipeTotal },
+      topCategories,
+      dailyVisitors,
+      totalEvents: events.length,
+    });
+    setAnalyticsLoading(false);
+  };
+
   // Animated category switching
   const switchCategory = useCallback((cat) => {
     setActiveCategory(cat);
-    setCardAnimKey((k) => k + 1); // re-trigger entrance animations
+    setCardAnimKey((k) => k + 1);
     setPillPopCat(cat);
     setTimeout(() => setPillPopCat(null), 350);
+    trackEvent("category_view", null, cat);
   }, []);
 
   // Open profile with URL update
@@ -695,6 +807,7 @@ export default function TioJohnny() {
     setSelectedTalent(t);
     setCarouselIndex(0);
     window.history.pushState(null, "", `#/modelo/${t.id}`);
+    trackEvent("profile_view", t.id);
   }, []);
 
   // Animated modal close
@@ -778,6 +891,7 @@ export default function TioJohnny() {
   const doSwipe = (dir) => {
     setSwipeAnim(dir);
     const currentTalent = filtered[swipeIndex];
+    if (currentTalent) trackEvent(dir === "right" ? "swipe_like" : "swipe_skip", currentTalent.id);
     if (dir === "right" && currentTalent) {
       // Add to favorites
       if (!favorites.includes(currentTalent.id)) {
@@ -801,6 +915,7 @@ export default function TioJohnny() {
   const [shareConfirm, setShareConfirm] = useState(null); // talent id that just got "copied" feedback
   const handleShare = useCallback(async (t, e) => {
     if (e) e.stopPropagation();
+    trackEvent("share", t.id);
     const url = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
     const shareData = {
       title: `${t.name} — TioJohnny.cl`,
@@ -1169,6 +1284,157 @@ export default function TioJohnny() {
           </div>
         </header>
 
+        {/* Admin tabs */}
+        <div className="flex gap-2 px-4 pt-3 pb-1">
+          <button
+            onClick={() => setAdminTab("profiles")}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+            style={{ background: adminTab === "profiles" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "profiles" ? "#fff" : "#7878a0" }}
+          >
+            <Users size={16} /> Perfiles
+          </button>
+          <button
+            onClick={() => { setAdminTab("analytics"); if (!analyticsData) fetchAnalytics(); }}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+            style={{ background: adminTab === "analytics" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "analytics" ? "#fff" : "#7878a0" }}
+          >
+            <BarChart3 size={16} /> Analytics
+          </button>
+        </div>
+
+        {/* ═══ ANALYTICS TAB ═══ */}
+        {adminTab === "analytics" && (
+          <div className="px-4 py-3">
+            {analyticsLoading && (
+              <div className="text-center py-16">
+                <Loader2 size={24} color="#8B5CF6" className="animate-spin mx-auto" />
+                <p className="text-xs mt-3" style={{ color: "#7878a0" }}>Cargando analytics...</p>
+              </div>
+            )}
+            {analyticsData && !analyticsLoading && (
+              <div className="space-y-4">
+                {/* Refresh button */}
+                <div className="flex justify-end">
+                  <button onClick={fetchAnalytics} className="text-xs flex items-center gap-1 px-3 py-1.5 rounded-full" style={{ background: "#1e1e3a", color: "#8B5CF6" }}>
+                    <RotateCcw size={12} /> Actualizar
+                  </button>
+                </div>
+
+                {/* Visitors summary */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.views.today} visitas` },
+                    { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.views.week} visitas` },
+                    { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.views.month} visitas` },
+                  ].map((s) => (
+                    <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
+                      <div className="text-2xl font-bold text-white">{s.value}</div>
+                      <div className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>{s.label}</div>
+                      <div className="text-xs mt-0.5" style={{ color: "#4a4a6a" }}>{s.sub}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Daily visitors chart */}
+                <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                  <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Visitantes (últimos 7 días)</h3>
+                  <div className="flex items-end justify-between gap-1" style={{ height: 100 }}>
+                    {analyticsData.dailyVisitors.map((d, i) => {
+                      const max = Math.max(...analyticsData.dailyVisitors.map((x) => x.count), 1);
+                      const h = Math.max((d.count / max) * 80, 4);
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-xs font-bold text-white">{d.count || ""}</span>
+                          <div className="w-full rounded-t-lg" style={{ height: h, background: "linear-gradient(to top, #8B5CF6, #c084fc)", minWidth: 8 }} />
+                          <span style={{ fontSize: 9, color: "#7878a0" }}>{d.day}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Pasarela stats */}
+                {analyticsData.pasarela.total > 0 && (
+                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Pasarela</h3>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex rounded-full overflow-hidden" style={{ height: 12 }}>
+                          <div style={{ width: `${(analyticsData.pasarela.likes / analyticsData.pasarela.total) * 100}%`, background: "#22c55e" }} />
+                          <div style={{ width: `${(analyticsData.pasarela.skips / analyticsData.pasarela.total) * 100}%`, background: "#f43f5e" }} />
+                        </div>
+                      </div>
+                      <div className="flex gap-3 text-xs">
+                        <span style={{ color: "#22c55e" }}>{analyticsData.pasarela.likes} likes</span>
+                        <span style={{ color: "#f43f5e" }}>{analyticsData.pasarela.skips} skips</span>
+                      </div>
+                    </div>
+                    <p className="text-xs mt-2" style={{ color: "#7878a0" }}>
+                      {analyticsData.pasarela.total > 0 ? Math.round((analyticsData.pasarela.likes / analyticsData.pasarela.total) * 100) : 0}% tasa de like
+                    </p>
+                  </div>
+                )}
+
+                {/* Top viewed / favorited / shared */}
+                {[
+                  { title: "Más Vistas", data: analyticsData.topViewed, color: "#8B5CF6", icon: <EyeIcon size={12} /> },
+                  { title: "Más Favoritas", data: analyticsData.topFavorited, color: "#f43f5e", icon: <Heart size={12} /> },
+                  { title: "Más Compartidas", data: analyticsData.topShared, color: "#60a5fa", icon: <Share2 size={12} /> },
+                ].map((section) => section.data.length > 0 && (
+                  <div key={section.title} className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-1" style={{ color: section.color }}>
+                      {section.icon} {section.title}
+                    </h3>
+                    <div className="space-y-2">
+                      {section.data.map(([tid, count], i) => {
+                        const t = talents.find((x) => x.id === parseInt(tid));
+                        if (!t) return null;
+                        const maxCount = section.data[0]?.[1] || 1;
+                        return (
+                          <div key={tid} className="flex items-center gap-2">
+                            <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
+                            <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+                              <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-white truncate">{t.name}</p>
+                              <div className="mt-0.5 rounded-full overflow-hidden" style={{ height: 4, background: "#12122a" }}>
+                                <div className="h-full rounded-full" style={{ width: `${(count / maxCount) * 100}%`, background: section.color }} />
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold" style={{ color: section.color }}>{count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Popular categories */}
+                {analyticsData.topCategories.length > 0 && (
+                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Categorías Populares</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {analyticsData.topCategories.map(([cat, count]) => (
+                        <span key={cat} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: "#12122a", color: "#9898b0" }}>
+                          {cat} <span style={{ color: "#8B5CF6" }}>{count}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-center pb-4" style={{ color: "#4a4a6a" }}>
+                  {analyticsData.totalEvents} eventos registrados (últimos 30 días)
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ PROFILES TAB ═══ */}
+        {adminTab === "profiles" && (
+        <>
         <div className="px-4 py-3 flex gap-2">
           <button onClick={() => openEditor(null)} className="flex-1 py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
             <Plus size={18} /> Nueva Modelo
@@ -1383,6 +1649,7 @@ export default function TioJohnny() {
             ))}
           </div>
         )}
+        </>)}
       </div>
     );
   }
