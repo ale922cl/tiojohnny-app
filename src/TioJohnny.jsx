@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
@@ -81,6 +81,89 @@ async function deletePhoto(url) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ANIMATION STYLES (injected once)
+// ═══════════════════════════════════════════════════════════════════════════════
+const ANIM_CSS = `
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(28px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fadeSlideDown {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(28px) scale(0.97); }
+}
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes modalSlideDown {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(100%); }
+}
+@keyframes heartPop {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.5); }
+  60%  { transform: scale(0.85); }
+  100% { transform: scale(1); }
+}
+@keyframes heartBurst {
+  0%   { opacity: 1; transform: scale(0.3); }
+  50%  { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+@keyframes flyHeart {
+  0%   { opacity: 1; transform: translate(0, 0) scale(1) rotate(0deg); }
+  30%  { opacity: 1; transform: translate(var(--fly-x1), var(--fly-y1)) scale(0.8) rotate(-15deg); }
+  70%  { opacity: 0.7; transform: translate(var(--fly-x2), var(--fly-y2)) scale(0.5) rotate(10deg); }
+  100% { opacity: 0; transform: translate(var(--fly-x3), var(--fly-y3)) scale(0.2) rotate(0deg); }
+}
+@keyframes floatUp {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.4); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pillPop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@keyframes cardPress {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+@keyframes favBadgeBounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.4); }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+@keyframes sparkle {
+  0%   { opacity: 0; transform: scale(0) rotate(0deg); }
+  50%  { opacity: 1; transform: scale(1) rotate(180deg); }
+  100% { opacity: 0; transform: scale(0) rotate(360deg); }
+}
+.card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+.modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+.modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
+.heart-pop   { animation: heartPop 0.4s cubic-bezier(0.22,1,0.36,1); }
+.pill-pop    { animation: pillPop 0.3s cubic-bezier(0.22,1,0.36,1); }
+.badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
+`;
+
+let animStyleInjected = false;
+function injectAnimStyles() {
+  if (animStyleInjected) return;
+  const style = document.createElement("style");
+  style.textContent = ANIM_CSS;
+  document.head.appendChild(style);
+  animStyleInjected = true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function TioJohnny() {
@@ -128,8 +211,20 @@ export default function TioJohnny() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ─── Animation state ────────────────────────────────────────────────
+  const [floatingHearts, setFloatingHearts] = useState([]);
+  const [heartPopId, setHeartPopId] = useState(null);
+  const [modalClosing, setModalClosing] = useState(false);
+  const [pillPopCat, setPillPopCat] = useState(null);
+  const [badgeBounce, setBadgeBounce] = useState(false);
+  const [cardAnimKey, setCardAnimKey] = useState(0); // triggers re-entrance animation
+  const favPillRef = useRef(null);
+
   const searchRef = useRef(null);
   const fileRef = useRef(null);
+
+  // Inject CSS animations once
+  useEffect(() => { injectAnimStyles(); }, []);
 
   // ─── Load data from Supabase on mount ───────────────────────────────
   useEffect(() => {
@@ -166,7 +261,7 @@ export default function TioJohnny() {
 
   // Derived arrays for UI
   const categoryNames = categories.map((c) => c.name);
-  const publicCategories = ["Todas", ...categoryNames, "Favoritas"];
+  const publicCategories = ["Todas", "Favoritas", ...categoryNames];
 
   // ─── Category management handlers ─────────────────────────────────────
   const handleAddCategory = async () => {
@@ -196,10 +291,45 @@ export default function TioJohnny() {
     return photos.length > 0 ? photos : [generatePlaceholderSvg(t.id)];
   };
 
-  const toggleFav = (id, e) => {
+  const toggleFav = useCallback((id, e) => {
     e.stopPropagation();
+    const adding = !favorites.includes(id);
     setFavorites((prev) => prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]);
-  };
+
+    // Heart pop animation on the button
+    setHeartPopId(id);
+    setTimeout(() => setHeartPopId(null), 450);
+
+    if (adding) {
+      // Bounce the favorites badge
+      setBadgeBounce(true);
+      setTimeout(() => setBadgeBounce(false), 450);
+
+      // Spawn floating hearts from click position
+      const rect = e.currentTarget.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      // Get Favoritas pill position for fly target
+      const favRect = favPillRef.current?.getBoundingClientRect();
+      const tx = favRect ? favRect.left + favRect.width / 2 : window.innerWidth / 2;
+      const ty = favRect ? favRect.top + favRect.height / 2 : 60;
+
+      const newHearts = Array.from({ length: 6 }, (_, i) => ({
+        id: Date.now() + i,
+        x: cx + (Math.random() - 0.5) * 30,
+        y: cy + (Math.random() - 0.5) * 30,
+        tx, ty,
+        delay: i * 0.06,
+        size: 12 + Math.random() * 10,
+        color: ["#f43f5e", "#ec4899", "#f472b6", "#fb7185", "#ff6b9d", "#e11d48"][i],
+      }));
+      setFloatingHearts((prev) => [...prev, ...newHearts]);
+      setTimeout(() => {
+        setFloatingHearts((prev) => prev.filter((h) => !newHearts.some((n) => n.id === h.id)));
+      }, 1200);
+    }
+  }, [favorites]);
 
   // Helper: get categories array from a talent (supports old string format + new array format)
   const getTalentCategories = (t) => {
@@ -354,6 +484,23 @@ export default function TioJohnny() {
     await supabase.from("talents").delete().eq("id", id);
     await fetchTalents();
   };
+
+  // Animated category switching
+  const switchCategory = useCallback((cat) => {
+    setActiveCategory(cat);
+    setCardAnimKey((k) => k + 1); // re-trigger entrance animations
+    setPillPopCat(cat);
+    setTimeout(() => setPillPopCat(null), 350);
+  }, []);
+
+  // Animated modal close
+  const closeDetail = useCallback(() => {
+    setModalClosing(true);
+    setTimeout(() => {
+      setSelectedTalent(null);
+      setModalClosing(false);
+    }, 250);
+  }, []);
 
   // Split talents into active and archived for admin
   const activeTalents = talents.filter((t) => !t.archived);
@@ -694,14 +841,14 @@ export default function TioJohnny() {
     const experienceList = (t.experience || "").split("\n").filter(Boolean);
 
     return (
-      <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "#12122a" }}>
+      <div className={`fixed inset-0 z-50 flex flex-col ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "#12122a" }}>
         <div className="relative w-full" style={{ height: "55vh", minHeight: 300 }}>
           <img src={images[carouselIndex]} alt={t.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
           <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 50%, #12122a 100%)" }} />
-          <button onClick={() => setSelectedTalent(null)} className="absolute top-4 right-4 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <button onClick={closeDetail} className="absolute top-4 right-4 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
             <X size={22} color="#fff" />
           </button>
-          <button onClick={(e) => toggleFav(t.id, e)} className="absolute top-4 left-4 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <button onClick={(e) => toggleFav(t.id, e)} className={`absolute top-4 left-4 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`} style={{ background: "rgba(0,0,0,0.5)" }}>
             <Heart size={22} color={favorites.includes(t.id) ? "#f43f5e" : "#fff"} fill={favorites.includes(t.id) ? "#f43f5e" : "none"} />
           </button>
           {imgCount > 1 && (
@@ -848,10 +995,28 @@ export default function TioJohnny() {
       <div className="flex gap-2 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
         {publicCategories.map((cat) => {
           const active = activeCategory === cat;
+          const isFavPill = cat === "Favoritas";
           return (
-            <button key={cat} onClick={() => setActiveCategory(cat)} className="flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1" style={{ background: active ? (cat === "Favoritas" ? "#f43f5e" : "#8B5CF6") : "#1e1e3a", color: active ? "#fff" : "#9898b0", border: active ? "none" : "1px solid #2a2a4a" }}>
-              {cat === "Favoritas" && <Heart size={10} fill={active ? "#fff" : "none"} />}
-              {cat}{cat === "Favoritas" && favorites.length > 0 ? ` (${favorites.length})` : ""}
+            <button
+              key={cat}
+              ref={isFavPill ? favPillRef : null}
+              onClick={() => switchCategory(cat)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1 ${pillPopCat === cat ? "pill-pop" : ""}`}
+              style={{
+                background: active ? (isFavPill ? "#f43f5e" : "#8B5CF6") : "#1e1e3a",
+                color: active ? "#fff" : "#9898b0",
+                border: active ? "none" : "1px solid #2a2a4a",
+                transition: "background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease",
+                boxShadow: active ? (isFavPill ? "0 0 16px rgba(244,63,94,0.4)" : "0 0 16px rgba(139,92,246,0.4)") : "none",
+              }}
+            >
+              {isFavPill && <Heart size={10} fill={active ? "#fff" : "none"} />}
+              {cat}
+              {isFavPill && favorites.length > 0 && (
+                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-white ${badgeBounce ? "badge-bounce" : ""}`} style={{ fontSize: 9, background: active ? "rgba(255,255,255,0.25)" : "#f43f5e", minWidth: 18, textAlign: "center" }}>
+                  {favorites.length}
+                </span>
+              )}
             </button>
           );
         })}
@@ -863,14 +1028,23 @@ export default function TioJohnny() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 px-3 pb-8">
-        {filtered.map((t) => {
+        {filtered.map((t, idx) => {
           const isFav = favorites.includes(t.id);
           return (
-            <div key={t.id} onClick={() => { setSelectedTalent(t); setCarouselIndex(0); }} className="rounded-2xl overflow-hidden cursor-pointer transition-transform active:scale-95" style={{ background: "#1e1e3a" }}>
+            <div
+              key={`${t.id}-${cardAnimKey}`}
+              onClick={() => { setSelectedTalent(t); setCarouselIndex(0); }}
+              className="card-enter rounded-2xl overflow-hidden cursor-pointer"
+              style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s` }}
+            >
               <div className="relative" style={{ paddingBottom: "130%" }}>
                 <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top" }} loading="lazy" />
                 <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
-                <button onClick={(e) => toggleFav(t.id, e)} className="absolute top-2 right-2 p-2 rounded-full transition-all" style={{ background: "rgba(0,0,0,0.35)" }}>
+                <button
+                  onClick={(e) => toggleFav(t.id, e)}
+                  className={`absolute top-2 right-2 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`}
+                  style={{ background: "rgba(0,0,0,0.35)", transition: "transform 0.2s ease" }}
+                >
                   <Heart size={16} color={isFav ? "#f43f5e" : "#fff"} fill={isFav ? "#f43f5e" : "none"} />
                 </button>
                 <div className="absolute bottom-0 left-0 right-0 p-3">
@@ -888,13 +1062,44 @@ export default function TioJohnny() {
         <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
           <Search size={48} style={{ color: "#2a2a4a" }} />
           <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No se encontraron modelos.</p>
-          <button onClick={() => { setActiveCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
+          <button onClick={() => { switchCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
             Ver todas
           </button>
         </div>
       )}
 
       {renderDetail()}
+
+      {/* ── Floating Hearts Overlay ── */}
+      {floatingHearts.length > 0 && (
+        <div className="fixed inset-0 pointer-events-none z-[9999]">
+          {floatingHearts.map((h) => {
+            const dx = h.tx - h.x;
+            const dy = h.ty - h.y;
+            return (
+              <div
+                key={h.id}
+                style={{
+                  position: "absolute",
+                  left: h.x,
+                  top: h.y,
+                  "--fly-x1": `${dx * 0.2 + (Math.random() - 0.5) * 60}px`,
+                  "--fly-y1": `${dy * 0.3 - 30}px`,
+                  "--fly-x2": `${dx * 0.7 + (Math.random() - 0.5) * 40}px`,
+                  "--fly-y2": `${dy * 0.7}px`,
+                  "--fly-x3": `${dx}px`,
+                  "--fly-y3": `${dy}px`,
+                  animation: `flyHeart 0.9s cubic-bezier(0.22,1,0.36,1) ${h.delay}s both`,
+                }}
+              >
+                <svg width={h.size} height={h.size} viewBox="0 0 24 24" fill={h.color}>
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
