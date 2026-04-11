@@ -111,7 +111,7 @@ export default function TioJohnny() {
   const [editorId, setEditorId] = useState(null);
   const [formName, setFormName] = useState("");
   const [formSpecialty, setFormSpecialty] = useState("");
-  const [formCategory, setFormCategory] = useState("Fashion");
+  const [formCategories, setFormCategories] = useState([]);
   const [formRate, setFormRate] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formLocation, setFormLocation] = useState("");
@@ -200,8 +200,16 @@ export default function TioJohnny() {
     setFavorites((prev) => prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]);
   };
 
+  // Helper: get categories array from a talent (supports old string format + new array format)
+  const getTalentCategories = (t) => {
+    if (Array.isArray(t.category)) return t.category;
+    if (typeof t.category === "string" && t.category) return [t.category];
+    return [];
+  };
+
   const filtered = talents.filter((t) => {
-    const matchCat = activeCategory === "Todas" || t.category === activeCategory;
+    const talentCats = getTalentCategories(t);
+    const matchCat = activeCategory === "Todas" || talentCats.includes(activeCategory);
     const matchSearch = !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.specialty || "").toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -239,7 +247,7 @@ export default function TioJohnny() {
       setEditorId(talent.id);
       setFormName(talent.name || "");
       setFormSpecialty(talent.specialty || "");
-      setFormCategory(talent.category || "Fashion");
+      setFormCategories(Array.isArray(talent.category) ? talent.category : (talent.category ? [talent.category] : []));
       setFormRate(talent.rate || "");
       setFormPhone(talent.phone || "");
       setFormLocation(talent.location || "");
@@ -254,7 +262,7 @@ export default function TioJohnny() {
       setFormPhotos(talent.photos || []);
     } else {
       setEditorId(null);
-      setFormName(""); setFormSpecialty(""); setFormCategory(categoryNames[0] || "");
+      setFormName(""); setFormSpecialty(""); setFormCategories([]);
       setFormRate(""); setFormPhone(""); setFormLocation("");
       setFormAbout(""); setFormExperience("");
       setFormHeight(""); setFormWeight(""); setFormEyes("");
@@ -298,7 +306,7 @@ export default function TioJohnny() {
     const profileData = {
       name: formName,
       specialty: formSpecialty,
-      category: formCategory,
+      category: formCategories,
       rate: formRate,
       phone: formPhone,
       location: formLocation,
@@ -458,10 +466,17 @@ export default function TioJohnny() {
                 <input value={formSpecialty} onChange={(e) => setFormSpecialty(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="Fashion Model" />
               </div>
               <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Categoría</label>
-                <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle}>
-                  {categoryNames.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Categorías</label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {categoryNames.map((c) => {
+                    const isSelected = formCategories.includes(c);
+                    return (
+                      <button key={c} type="button" onClick={() => setFormCategories((prev) => isSelected ? prev.filter((x) => x !== c) : [...prev, c])} className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all" style={{ background: isSelected ? "#8B5CF6" : "#12122a", color: isSelected ? "#fff" : "#9898b0", border: isSelected ? "2px solid #8B5CF6" : "1px solid #2a2a4a" }}>
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -588,7 +603,12 @@ export default function TioJohnny() {
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-bold text-white truncate">{t.name}</h3>
                 <p className="text-xs truncate" style={{ color: "#8B5CF6" }}>{t.specialty}</p>
-                <p className="text-xs mt-0.5" style={{ color: "#7878a0" }}>{t.rate} &middot; {(t.photos || []).length} fotos</p>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {getTalentCategories(t).map((c) => (
+                    <span key={c} className="text-white px-1.5 py-0.5 rounded" style={{ fontSize: 9, background: "#8B5CF6" }}>{c}</span>
+                  ))}
+                  <span className="text-xs" style={{ color: "#7878a0" }}>&middot; {(t.photos || []).length} fotos</span>
+                </div>
               </div>
               <div className="flex gap-2 flex-shrink-0">
                 <button onClick={() => openEditor(t)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }}>
