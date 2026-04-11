@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -226,6 +226,13 @@ export default function TioJohnny() {
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
   const [catSearch, setCatSearch] = useState("");
   const catDropdownRef = useRef(null);
+
+  // ─── CSV import state ──────────────────────────────────────────────
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvPreview, setCsvPreview] = useState([]); // parsed rows
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null); // { added: N, errors: N }
+  const csvFileRef = useRef(null);
 
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
@@ -578,6 +585,101 @@ export default function TioJohnny() {
     }
     await supabase.from("talents").delete().eq("id", id);
     await fetchTalents();
+  };
+
+  // ─── CSV Import handlers ───────────────────────────────────────────
+  const parseCSV = (text) => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+    // Parse header
+    const parseRow = (line) => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (ch === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += ch;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+    const headers = parseRow(lines[0]).map((h) => h.toLowerCase().trim());
+    return lines.slice(1).map((line) => {
+      const vals = parseRow(line);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = vals[i] || ""; });
+      return obj;
+    });
+  };
+
+  // Map CSV columns to talent fields (flexible naming)
+  const mapCsvToProfile = (row) => {
+    const get = (...keys) => {
+      for (const k of keys) {
+        const val = row[k] || row[k.toLowerCase()];
+        if (val) return val;
+      }
+      return "";
+    };
+    return {
+      name: get("name", "nombre", "nombre completo"),
+      specialty: get("specialty", "especialidad", "especiality"),
+      category: (get("category", "categoría", "categorias", "categorías", "categories") || "").split(/[;|,]/).map((s) => s.trim()).filter(Boolean),
+      rate: get("rate", "tarifa", "precio"),
+      phone: get("phone", "teléfono", "telefono", "celular", "whatsapp"),
+      location: get("location", "ubicación", "ubicacion", "ciudad"),
+      about: get("about", "sobre", "descripción", "descripcion", "bio"),
+      experience: get("experience", "experiencia", "servicios", "services"),
+      height: get("height", "altura"),
+      weight: get("weight", "peso"),
+      eyes: get("eyes", "ojos"),
+      hair: get("hair", "cabello", "pelo"),
+      age: get("age", "edad"),
+      sizes: get("sizes", "talla", "tallas"),
+      instagram: get("instagram", "ig", "insta"),
+      photos: [],
+      archived: false,
+    };
+  };
+
+  const handleCsvFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const rows = parseCSV(ev.target.result);
+      setCsvPreview(rows);
+      setCsvResult(null);
+    };
+    reader.readAsText(file);
+    if (e.target) e.target.value = "";
+  };
+
+  const handleCsvImport = async () => {
+    if (csvPreview.length === 0) return;
+    setCsvImporting(true);
+    const maxOrder = talents.length > 0 ? Math.max(...talents.map((t) => t.sort_order ?? 0)) : 0;
+    let added = 0;
+    let errors = 0;
+    for (let i = 0; i < csvPreview.length; i++) {
+      const profile = mapCsvToProfile(csvPreview[i]);
+      if (!profile.name) { errors++; continue; }
+      profile.sort_order = maxOrder + 1 + i;
+      const { error } = await supabase.from("talents").insert([profile]);
+      if (error) { errors++; console.error(error); } else { added++; }
+    }
+    await fetchTalents();
+    setCsvImporting(false);
+    setCsvResult({ added, errors });
+    setCsvPreview([]);
   };
 
   // Animated category switching
@@ -1060,11 +1162,98 @@ export default function TioJohnny() {
           </div>
         </header>
 
-        <div className="px-4 py-3">
-          <button onClick={() => openEditor(null)} className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
-            <Plus size={18} /> Agregar Nueva Modelo
+        <div className="px-4 py-3 flex gap-2">
+          <button onClick={() => openEditor(null)} className="flex-1 py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
+            <Plus size={18} /> Nueva Modelo
+          </button>
+          <button onClick={() => { setCsvImportOpen((o) => !o); setCsvPreview([]); setCsvResult(null); }} className="py-3 px-4 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: csvImportOpen ? "#2a2a4a" : "#1e1e3a", border: "1px solid #2a2a4a" }}>
+            <FileSpreadsheet size={18} color="#8B5CF6" />
           </button>
         </div>
+
+        {/* ── CSV Import ── */}
+        {csvImportOpen && (
+          <div className="px-4 pb-4">
+            <div className="rounded-2xl p-4" style={{ background: "#1e1e3a" }}>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-2">
+                <Upload size={14} color="#8B5CF6" /> Importar desde CSV
+              </h3>
+              <p className="text-xs mb-3" style={{ color: "#7878a0" }}>
+                Sube un CSV exportado desde Google Sheets. Columnas aceptadas: nombre, especialidad, categorías (separadas por ;), tarifa, teléfono, ubicación, sobre, servicios, altura, peso, ojos, cabello, edad, talla, instagram.
+              </p>
+
+              {csvPreview.length === 0 && !csvResult && (
+                <>
+                  <button
+                    onClick={() => csvFileRef.current?.click()}
+                    className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95"
+                    style={{ border: "2px dashed #2a2a4a", background: "transparent", color: "#8B5CF6" }}
+                  >
+                    <Upload size={16} /> Seleccionar archivo CSV
+                  </button>
+                  <input ref={csvFileRef} type="file" accept=".csv,.txt" onChange={handleCsvFile} className="hidden" />
+                </>
+              )}
+
+              {csvPreview.length > 0 && (
+                <div>
+                  <div className="rounded-xl overflow-hidden mb-3" style={{ border: "1px solid #2a2a4a", maxHeight: 200, overflowY: "auto" }}>
+                    {csvPreview.map((row, i) => {
+                      const p = mapCsvToProfile(row);
+                      return (
+                        <div key={i} className="flex items-center gap-3 px-3 py-2" style={{ borderBottom: "1px solid #2a2a4a" }}>
+                          <span className="text-xs font-bold" style={{ color: "#4a4a6a", width: 20 }}>{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{p.name || "(sin nombre)"}</p>
+                            <p className="text-xs truncate" style={{ color: "#7878a0" }}>{p.location} &middot; {p.specialty}</p>
+                          </div>
+                          {!p.name && <AlertCircle size={14} color="#f59e0b" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCsvImport}
+                      disabled={csvImporting}
+                      className="flex-1 py-2.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95"
+                      style={{ background: "#22c55e" }}
+                    >
+                      {csvImporting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                      {csvImporting ? "Importando..." : `Importar ${csvPreview.length} perfil${csvPreview.length !== 1 ? "es" : ""}`}
+                    </button>
+                    <button
+                      onClick={() => setCsvPreview([])}
+                      className="py-2.5 px-4 rounded-xl font-bold text-sm transition-transform active:scale-95"
+                      style={{ background: "#2a2a4a", color: "#9898b0" }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {csvResult && (
+                <div className="rounded-xl p-3" style={{ background: "#12122a" }}>
+                  <p className="text-sm font-bold" style={{ color: "#22c55e" }}>
+                    {csvResult.added} perfil{csvResult.added !== 1 ? "es" : ""} importado{csvResult.added !== 1 ? "s" : ""}
+                  </p>
+                  {csvResult.errors > 0 && (
+                    <p className="text-xs mt-1" style={{ color: "#f59e0b" }}>
+                      {csvResult.errors} fila{csvResult.errors !== 1 ? "s" : ""} con error (sin nombre o fallo)
+                    </p>
+                  )}
+                  <p className="text-xs mt-2" style={{ color: "#7878a0" }}>
+                    Ahora agrega fotos a cada perfil desde el editor.
+                  </p>
+                  <button onClick={() => { setCsvResult(null); setCsvImportOpen(false); }} className="mt-2 text-xs font-semibold" style={{ color: "#8B5CF6" }}>
+                    Cerrar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Category Manager ── */}
         <div className="px-4 pb-4">
@@ -1399,20 +1588,20 @@ export default function TioJohnny() {
 
       <div className="px-4 pb-2 flex items-center justify-between">
         <p className="text-xs" style={{ color: "#6b6b90" }}>{filtered.length} modelo{filtered.length !== 1 ? "s" : ""}</p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 rounded-full p-0.5" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
           <button
             onClick={() => { setViewMode("grid"); setSwipeIndex(0); }}
-            className="p-1.5 rounded-lg transition-all"
-            style={{ background: viewMode === "grid" ? "#8B5CF6" : "transparent" }}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+            style={{ background: viewMode === "grid" ? "#8B5CF6" : "transparent", color: viewMode === "grid" ? "#fff" : "#6b6b90" }}
           >
-            <Grid3X3 size={14} color={viewMode === "grid" ? "#fff" : "#6b6b90"} />
+            <Grid3X3 size={12} />
           </button>
           <button
             onClick={() => { setViewMode("swipe"); setSwipeIndex(0); }}
-            className="p-1.5 rounded-lg transition-all"
-            style={{ background: viewMode === "swipe" ? "#8B5CF6" : "transparent" }}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+            style={{ background: viewMode === "swipe" ? "linear-gradient(135deg, #8B5CF6, #ec4899)" : "transparent", color: viewMode === "swipe" ? "#fff" : "#6b6b90" }}
           >
-            <Layers size={14} color={viewMode === "swipe" ? "#fff" : "#6b6b90"} />
+            <Layers size={12} /> Pasarela
           </button>
         </div>
       </div>
@@ -1578,13 +1767,13 @@ export default function TioJohnny() {
                   <Share2 size={18} color="#60a5fa" />
                 </button>
               </div>
-              <p className="text-xs mb-4" style={{ color: "#4a4a6a" }}>{swipeIndex + 1} / {filtered.length}</p>
+              <p className="text-xs mb-4" style={{ color: "#4a4a6a" }}>Pasarela &middot; {swipeIndex + 1} / {filtered.length}</p>
             </>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
               <Heart size={48} style={{ color: "#8B5CF6" }} />
               <p className="mt-4 text-base font-bold text-white">
-                {filtered.length === 0 ? "No hay modelos en esta categoría" : "Viste todas las modelos!"}
+                {filtered.length === 0 ? "No hay modelos en esta categoría" : "Fin de la Pasarela!"}
               </p>
               <p className="mt-1 text-xs" style={{ color: "#6b6b90" }}>
                 {favorites.length > 0 ? `${favorites.length} favorita${favorites.length !== 1 ? "s" : ""} guardada${favorites.length !== 1 ? "s" : ""}` : "Desliza a la derecha para guardar favoritas"}
