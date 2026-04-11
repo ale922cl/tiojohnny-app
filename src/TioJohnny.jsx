@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -146,6 +146,19 @@ const ANIM_CSS = `
   50%  { opacity: 1; transform: scale(1) rotate(180deg); }
   100% { opacity: 0; transform: scale(0) rotate(360deg); }
 }
+@keyframes swipeRight {
+  to { opacity: 0; transform: translateX(150%) rotate(20deg); }
+}
+@keyframes swipeLeft {
+  to { opacity: 0; transform: translateX(-150%) rotate(-20deg); }
+}
+@keyframes cardStackIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.swipe-right { animation: swipeRight 0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
+.swipe-left  { animation: swipeLeft 0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
+.card-stack-in { animation: cardStackIn 0.3s cubic-bezier(0.22,1,0.36,1) both; }
 .card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
@@ -213,6 +226,15 @@ export default function TioJohnny() {
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
   const [catSearch, setCatSearch] = useState("");
   const catDropdownRef = useRef(null);
+
+  // ─── Swipe mode state ──────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
+  const [swipeIndex, setSwipeIndex] = useState(0);
+  const [swipeDelta, setSwipeDelta] = useState({ x: 0, y: 0 });
+  const [swiping, setSwiping] = useState(false);
+  const [swipeAnim, setSwipeAnim] = useState(null); // "left" | "right" | null
+  const swipeStartRef = useRef(null);
+  const SWIPE_THRESHOLD = 80;
 
   // ─── Animation state ────────────────────────────────────────────────
   const [floatingHearts, setFloatingHearts] = useState([]);
@@ -583,6 +605,88 @@ export default function TioJohnny() {
       window.history.pushState(null, "", window.location.pathname);
     }, 250);
   }, []);
+
+  // ─── Swipe mode handlers ───────────────────────────────────────────
+  // Reset swipe index when category/filter changes
+  useEffect(() => { setSwipeIndex(0); }, [activeCategory, searchQuery]);
+
+  const handleSwipeTouchStart = (e) => {
+    const touch = e.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    setSwiping(true);
+  };
+  const handleSwipeTouchMove = (e) => {
+    if (!swipeStartRef.current) return;
+    const touch = e.touches[0];
+    setSwipeDelta({
+      x: touch.clientX - swipeStartRef.current.x,
+      y: touch.clientY - swipeStartRef.current.y,
+    });
+  };
+  const handleSwipeTouchEnd = () => {
+    if (!swipeStartRef.current) return;
+    if (Math.abs(swipeDelta.x) > SWIPE_THRESHOLD) {
+      if (swipeDelta.x > 0) {
+        // Swipe right → favorite
+        doSwipe("right");
+      } else {
+        // Swipe left → skip
+        doSwipe("left");
+      }
+    } else {
+      setSwipeDelta({ x: 0, y: 0 });
+    }
+    setSwiping(false);
+    swipeStartRef.current = null;
+  };
+  // Mouse support for desktop
+  const handleSwipeMouseDown = (e) => {
+    swipeStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+    setSwiping(true);
+    const handleMouseMove = (ev) => {
+      setSwipeDelta({
+        x: ev.clientX - swipeStartRef.current.x,
+        y: ev.clientY - swipeStartRef.current.y,
+      });
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      // Check threshold
+      setSwipeDelta((d) => {
+        if (Math.abs(d.x) > SWIPE_THRESHOLD) {
+          doSwipe(d.x > 0 ? "right" : "left");
+        }
+        return { x: 0, y: 0 };
+      });
+      setSwiping(false);
+      swipeStartRef.current = null;
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const doSwipe = (dir) => {
+    setSwipeAnim(dir);
+    const currentTalent = filtered[swipeIndex];
+    if (dir === "right" && currentTalent) {
+      // Add to favorites
+      if (!favorites.includes(currentTalent.id)) {
+        setFavorites((prev) => [...prev, currentTalent.id]);
+        setBadgeBounce(true);
+        setTimeout(() => setBadgeBounce(false), 450);
+      }
+    }
+    setTimeout(() => {
+      setSwipeAnim(null);
+      setSwipeDelta({ x: 0, y: 0 });
+      setSwipeIndex((i) => Math.min(i + 1, filtered.length));
+    }, 350);
+  };
+
+  const undoSwipe = () => {
+    if (swipeIndex > 0) setSwipeIndex((i) => i - 1);
+  };
 
   // ─── Share handler ──────────────────────────────────────────────────
   const [shareConfirm, setShareConfirm] = useState(null); // talent id that just got "copied" feedback
@@ -1263,7 +1367,7 @@ export default function TioJohnny() {
         </div>
       )}
 
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+      <div className="sticky z-30 flex gap-2 px-4 py-3 overflow-x-auto" style={{ top: 49, scrollbarWidth: "none", background: "rgba(18,18,42,0.95)", backdropFilter: "blur(12px)" }}>
         {publicCategories.map((cat) => {
           const active = activeCategory === cat;
           const isFavPill = cat === "Favoritas";
@@ -1295,47 +1399,208 @@ export default function TioJohnny() {
 
       <div className="px-4 pb-2 flex items-center justify-between">
         <p className="text-xs" style={{ color: "#6b6b90" }}>{filtered.length} modelo{filtered.length !== 1 ? "s" : ""}</p>
-        <Filter size={14} style={{ color: "#6b6b90" }} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setViewMode("grid"); setSwipeIndex(0); }}
+            className="p-1.5 rounded-lg transition-all"
+            style={{ background: viewMode === "grid" ? "#8B5CF6" : "transparent" }}
+          >
+            <Grid3X3 size={14} color={viewMode === "grid" ? "#fff" : "#6b6b90"} />
+          </button>
+          <button
+            onClick={() => { setViewMode("swipe"); setSwipeIndex(0); }}
+            className="p-1.5 rounded-lg transition-all"
+            style={{ background: viewMode === "swipe" ? "#8B5CF6" : "transparent" }}
+          >
+            <Layers size={14} color={viewMode === "swipe" ? "#fff" : "#6b6b90"} />
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 px-3 pb-8">
-        {filtered.map((t, idx) => {
-          const isFav = favorites.includes(t.id);
-          return (
-            <div
-              key={`${t.id}-${cardAnimKey}`}
-              onClick={() => openProfile(t)}
-              className="card-enter rounded-2xl overflow-hidden cursor-pointer"
-              style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s` }}
-            >
-              <div className="relative" style={{ paddingBottom: "130%" }}>
-                <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top" }} loading="lazy" />
-                <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
-                <button
-                  onClick={(e) => toggleFav(t.id, e)}
-                  className={`absolute top-2 right-2 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`}
-                  style={{ background: "rgba(0,0,0,0.35)", transition: "transform 0.2s ease" }}
+      {/* ═══ GRID VIEW ═══ */}
+      {viewMode === "grid" && (
+        <>
+          <div className="grid grid-cols-2 gap-3 px-3 pb-8">
+            {filtered.map((t, idx) => {
+              const isFav = favorites.includes(t.id);
+              return (
+                <div
+                  key={`${t.id}-${cardAnimKey}`}
+                  onClick={() => openProfile(t)}
+                  className="card-enter rounded-2xl overflow-hidden cursor-pointer"
+                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s` }}
                 >
-                  <Heart size={16} color={isFav ? "#f43f5e" : "#fff"} fill={isFav ? "#f43f5e" : "none"} />
-                </button>
-                <div className="absolute bottom-0 left-0 right-0 p-3">
-                  <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
-                  <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
-                  <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{t.rate}</p>
+                  <div className="relative" style={{ paddingBottom: "130%" }}>
+                    <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top" }} loading="lazy" />
+                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
+                    <button
+                      onClick={(e) => toggleFav(t.id, e)}
+                      className={`absolute top-2 right-2 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`}
+                      style={{ background: "rgba(0,0,0,0.35)", transition: "transform 0.2s ease" }}
+                    >
+                      <Heart size={16} color={isFav ? "#f43f5e" : "#fff"} fill={isFav ? "#f43f5e" : "none"} />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                      <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
+                      <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
+                      <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{t.rate}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {filtered.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+              <Search size={48} style={{ color: "#2a2a4a" }} />
+              <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No se encontraron modelos.</p>
+              <button onClick={() => { switchCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
+                Ver todas
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ═══ SWIPE VIEW ═══ */}
+      {viewMode === "swipe" && (
+        <div className="flex flex-col items-center" style={{ minHeight: "calc(100vh - 160px)" }}>
+          {swipeIndex < filtered.length ? (
+            <>
+              {/* Card stack */}
+              <div className="relative mt-4" style={{ width: "85vw", maxWidth: 380, height: "65vh", maxHeight: 520 }}>
+                {/* Background card (next) */}
+                {swipeIndex + 1 < filtered.length && (
+                  <div className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: "scale(0.94) translateY(12px)", opacity: 0.5, background: "#1e1e3a" }}>
+                    <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+                    <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
+                  </div>
+                )}
+                {/* Active card */}
+                <div
+                  className={`absolute inset-0 rounded-3xl overflow-hidden cursor-grab card-stack-in ${swipeAnim === "right" ? "swipe-right" : swipeAnim === "left" ? "swipe-left" : ""}`}
+                  style={{
+                    transform: swipeAnim ? undefined : `translateX(${swipeDelta.x}px) rotate(${swipeDelta.x * 0.06}deg)`,
+                    transition: swiping ? "none" : "transform 0.3s cubic-bezier(0.22,1,0.36,1)",
+                    boxShadow: "0 8px 40px rgba(0,0,0,0.4)",
+                    userSelect: "none",
+                    touchAction: "none",
+                  }}
+                  onTouchStart={handleSwipeTouchStart}
+                  onTouchMove={handleSwipeTouchMove}
+                  onTouchEnd={handleSwipeTouchEnd}
+                  onMouseDown={handleSwipeMouseDown}
+                >
+                  <img
+                    src={getMainPhoto(filtered[swipeIndex])}
+                    alt={filtered[swipeIndex].name}
+                    className="w-full h-full object-cover pointer-events-none"
+                    style={{ objectPosition: "top" }}
+                    draggable={false}
+                  />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
+
+                  {/* LIKE / NOPE indicators */}
+                  {swipeDelta.x > 30 && (
+                    <div className="absolute top-6 left-6 px-4 py-2 rounded-xl font-bold text-xl" style={{
+                      border: "3px solid #22c55e",
+                      color: "#22c55e",
+                      opacity: Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1),
+                      transform: "rotate(-15deg)",
+                    }}>
+                      LIKE
+                    </div>
+                  )}
+                  {swipeDelta.x < -30 && (
+                    <div className="absolute top-6 right-6 px-4 py-2 rounded-xl font-bold text-xl" style={{
+                      border: "3px solid #f43f5e",
+                      color: "#f43f5e",
+                      opacity: Math.min(Math.abs(swipeDelta.x) / SWIPE_THRESHOLD, 1),
+                      transform: "rotate(15deg)",
+                    }}>
+                      NOPE
+                    </div>
+                  )}
+
+                  {/* Card info */}
+                  <div className="absolute bottom-0 left-0 right-0 p-5">
+                    <h2 className="text-2xl font-bold text-white">{filtered[swipeIndex].name}</h2>
+                    <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex].specialty}</p>
+                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#b8b8d0" }}>
+                      <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {filtered[swipeIndex].rate}
+                    </p>
+                    {/* Tap to open full profile */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openProfile(filtered[swipeIndex]); }}
+                      className="mt-3 text-xs font-semibold px-4 py-2 rounded-full"
+                      style={{ background: "rgba(139,92,246,0.3)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.4)" }}
+                    >
+                      Ver perfil completo
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
 
-      {filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-          <Search size={48} style={{ color: "#2a2a4a" }} />
-          <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No se encontraron modelos.</p>
-          <button onClick={() => { switchCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
-            Ver todas
-          </button>
+              {/* Action buttons */}
+              <div className="flex items-center gap-6 mt-6 mb-4">
+                {/* Undo */}
+                <button
+                  onClick={undoSwipe}
+                  disabled={swipeIndex === 0}
+                  className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  style={{ background: "#1e1e3a", border: "2px solid #2a2a4a", opacity: swipeIndex === 0 ? 0.3 : 1 }}
+                >
+                  <RotateCcw size={18} color="#f59e0b" />
+                </button>
+                {/* Skip (left) */}
+                <button
+                  onClick={() => doSwipe("left")}
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  style={{ background: "#1e1e3a", border: "3px solid #f43f5e", boxShadow: "0 0 20px rgba(244,63,94,0.2)" }}
+                >
+                  <X size={28} color="#f43f5e" />
+                </button>
+                {/* Favorite (right) */}
+                <button
+                  onClick={() => doSwipe("right")}
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  style={{ background: "#1e1e3a", border: "3px solid #22c55e", boxShadow: "0 0 20px rgba(34,197,94,0.2)" }}
+                >
+                  <Heart size={28} color="#22c55e" fill="#22c55e" />
+                </button>
+                {/* Share */}
+                <button
+                  onClick={(e) => handleShare(filtered[swipeIndex], e)}
+                  className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
+                  style={{ background: "#1e1e3a", border: "2px solid #2a2a4a" }}
+                >
+                  <Share2 size={18} color="#60a5fa" />
+                </button>
+              </div>
+              <p className="text-xs mb-4" style={{ color: "#4a4a6a" }}>{swipeIndex + 1} / {filtered.length}</p>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+              <Heart size={48} style={{ color: "#8B5CF6" }} />
+              <p className="mt-4 text-base font-bold text-white">
+                {filtered.length === 0 ? "No hay modelos en esta categoría" : "Viste todas las modelos!"}
+              </p>
+              <p className="mt-1 text-xs" style={{ color: "#6b6b90" }}>
+                {favorites.length > 0 ? `${favorites.length} favorita${favorites.length !== 1 ? "s" : ""} guardada${favorites.length !== 1 ? "s" : ""}` : "Desliza a la derecha para guardar favoritas"}
+              </p>
+              <div className="flex gap-3 mt-4">
+                <button onClick={() => setSwipeIndex(0)} className="text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
+                  Empezar de nuevo
+                </button>
+                {favorites.length > 0 && (
+                  <button onClick={() => { switchCategory("Favoritas"); setViewMode("grid"); }} className="text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#f43f5e", color: "#fff" }}>
+                    Ver favoritas
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
