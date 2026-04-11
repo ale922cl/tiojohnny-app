@@ -829,6 +829,7 @@ export default function TioJohnny() {
 
   const lastPosRef = useRef({ x: 0, time: 0 });
   const dragXRef = useRef(0); // live drag x, NOT in state
+  const swipingLockRef = useRef(false); // prevents double-fire of doSwipe
   const swipeCardRef = useRef(null);
   const swipeBackRef = useRef(null);
   const swipeThirdRef = useRef(null);
@@ -894,6 +895,7 @@ export default function TioJohnny() {
   };
 
   const handleSwipeTouchStart = (e) => {
+    if (swipingLockRef.current) return;
     const touch = e.touches[0];
     swipeStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
     lastPosRef.current = { x: touch.clientX, time: Date.now() };
@@ -913,6 +915,7 @@ export default function TioJohnny() {
   };
 
   const handleSwipeMouseDown = (e) => {
+    if (swipingLockRef.current) return;
     e.preventDefault();
     swipeStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     lastPosRef.current = { x: e.clientX, time: Date.now() };
@@ -958,6 +961,10 @@ export default function TioJohnny() {
   };
 
   const doSwipe = (dir) => {
+    // Prevent double-fire (touchend + synthetic click, rapid calls, etc.)
+    if (swipingLockRef.current) return;
+    swipingLockRef.current = true;
+
     const flyX = dir === "right" ? window.innerWidth * 1.3 : -window.innerWidth * 1.3;
     setSwipeAnim(dir);
     // Animate card off-screen via DOM
@@ -976,17 +983,17 @@ export default function TioJohnny() {
     const currentTalent = filtered[swipeIndex];
     if (currentTalent) trackEvent(dir === "right" ? "swipe_like" : "swipe_skip", currentTalent.id);
     if (dir === "right" && currentTalent) {
-      if (!favorites.includes(currentTalent.id)) {
-        setFavorites((prev) => [...prev, currentTalent.id]);
-        setBadgeBounce(true);
-        setTimeout(() => setBadgeBounce(false), 450);
-      }
+      // Use functional update to avoid stale-state duplicates
+      setFavorites((prev) => prev.includes(currentTalent.id) ? prev : [...prev, currentTalent.id]);
+      setBadgeBounce(true);
+      setTimeout(() => setBadgeBounce(false), 450);
     }
     setTimeout(() => {
       setSwipeAnim(null);
       dragXRef.current = 0;
       setSwipeIndex((i) => Math.min(i + 1, filtered.length));
-    }, 220);
+      swipingLockRef.current = false;
+    }, 250);
   };
 
   const undoSwipe = () => {
