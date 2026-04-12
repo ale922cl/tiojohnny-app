@@ -6,28 +6,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
-// ─── DEBUG: Show errors on screen (remove after fixing) ─────────────
-if (typeof window !== "undefined") {
-  window.__TJ_ERRORS = [];
-  window.onerror = (msg, src, line, col, err) => {
-    window.__TJ_ERRORS.push(`${msg} (${src}:${line}:${col})`);
-    const el = document.getElementById("tj-error-overlay");
-    if (el) el.textContent = window.__TJ_ERRORS.join("\n");
-    else {
-      const d = document.createElement("div");
-      d.id = "tj-error-overlay";
-      d.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:red;color:white;padding:16px;font-size:12px;white-space:pre-wrap;max-height:50vh;overflow:auto;";
-      d.textContent = window.__TJ_ERRORS.join("\n");
-      document.body.appendChild(d);
-    }
-  };
-  window.onunhandledrejection = (e) => {
-    const msg = e.reason?.message || e.reason || "unhandled promise";
-    window.__TJ_ERRORS.push("Promise: " + msg);
-    const el = document.getElementById("tj-error-overlay");
-    if (el) el.textContent = window.__TJ_ERRORS.join("\n");
-  };
-}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUPABASE CONFIG
@@ -106,25 +85,40 @@ async function deletePhoto(url) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANALYTICS HELPER
 // ═══════════════════════════════════════════════════════════════════════════════
+// Persistent visitor ID via cookie (survives refresh, new tabs, etc.)
+function getVisitorId() {
+  try {
+    const match = document.cookie.match(/tj_vid=([^;]+)/);
+    if (match) return match[1];
+  } catch (_) {}
+  const vid = "v_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  try { document.cookie = "tj_vid=" + vid + ";max-age=31536000;path=/;SameSite=Lax"; } catch (_) {}
+  return vid;
+}
+// Session ID — new per browser session (tab close = new session)
 let _sessionId = null;
 function getSessionId() {
   if (_sessionId) return _sessionId;
-  try { _sessionId = sessionStorage.getItem("tj_sid"); } catch (e) {}
+  try { _sessionId = sessionStorage.getItem("tj_sid"); } catch (_) {}
   if (!_sessionId) {
     _sessionId = "s_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    try { sessionStorage.setItem("tj_sid", _sessionId); } catch (e) {}
+    try { sessionStorage.setItem("tj_sid", _sessionId); } catch (_) {}
   }
   return _sessionId;
 }
 
+function getDeviceType() {
+  try { return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "mobile" : "desktop"; } catch (_) { return "unknown"; }
+}
 function trackEvent(eventType, talentId = null, category = null, extra = null) {
   const payload = {
     event_type: eventType,
     session_id: getSessionId(),
+    visitor_id: getVisitorId(),
   };
   if (talentId) payload.talent_id = talentId;
   if (category) payload.category = category;
-  if (extra) payload.extra = extra; // JSON field for click coords etc.
+  if (extra) payload.extra = extra;
   // Fire and forget — don't block UI
   supabase.from("analytics_events").insert([payload]).then(() => {});
 }
@@ -498,7 +492,7 @@ export default function TioJohnny() {
   useEffect(() => {
     fetchTalents();
     fetchCategories();
-    trackEvent("page_view");
+    trackEvent("page_view", null, null, JSON.stringify({ device: getDeviceType() }));
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
@@ -983,7 +977,6 @@ export default function TioJohnny() {
     const weekAgo = new Date(now - 7 * 86400000).toISOString();
     const monthAgo = new Date(now - 30 * 86400000).toISOString();
 
-    // Fetch all events (last 30 days for efficiency)
     const { data: events } = await supabase
       .from("analytics_events")
       .select("*")
@@ -992,15 +985,17 @@ export default function TioJohnny() {
 
     if (!events) { setAnalyticsLoading(false); return; }
 
-    // Unique visitors (unique session_ids)
-    const allSessions = new Set(events.map((e) => e.session_id));
-    const todaySessions = new Set(events.filter((e) => e.created_at >= todayStart).map((e) => e.session_id));
-    const weekSessions = new Set(events.filter((e) => e.created_at >= weekAgo).map((e) => e.session_id));
+    // ── Unique REAL visitors (by visitor_id cookie, falls back to session_id for old data) ──
+    const getVid = (e) => e.visitor_id || e.session_id;
+    const allVisitors = new Set(events.map(getVid));
+    const todayVisitors = new Set(events.filter((e) => e.created_at >= todayStart).map(getVid));
+    const weekVisitors = new Set(events.filter((e) => e.created_at >= weekAgo).map(getVid));
 
-    // Page views
+    // Page views (sessions, not refreshes — count unique sessions)
     const pageViews = events.filter((e) => e.event_type === "page_view");
-    const todayViews = pageViews.filter((e) => e.created_at >= todayStart).length;
-    const weekViews = pageViews.filter((e) => e.created_at >= weekAgo).length;
+    const todaySessions = new Set(pageViews.filter((e) => e.created_at >= todayStart).map((e) => e.session_id)).size;
+    const weekSessions = new Set(pageViews.filter((e) => e.created_at >= weekAgo).map((e) => e.session_id)).size;
+    const monthSessions = new Set(pageViews.map((e) => e.session_id)).size;
 
     // Profile views — top 10
     const profileViews = events.filter((e) => e.event_type === "profile_view" && e.talent_id);
@@ -1008,10 +1003,10 @@ export default function TioJohnny() {
     profileViews.forEach((e) => { viewCounts[e.talent_id] = (viewCounts[e.talent_id] || 0) + 1; });
     const topViewed = Object.entries(viewCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
-    // Favorites — top 10
-    const favEvents = events.filter((e) => e.event_type === "favorite" && e.talent_id);
+    // ── Combined Favorites (grid hearts + pasarela swipe_like) — top 10 ──
+    const allFavEvents = events.filter((e) => (e.event_type === "favorite" || e.event_type === "swipe_like") && e.talent_id);
     const favCounts = {};
-    favEvents.forEach((e) => { favCounts[e.talent_id] = (favCounts[e.talent_id] || 0) + 1; });
+    allFavEvents.forEach((e) => { favCounts[e.talent_id] = (favCounts[e.talent_id] || 0) + 1; });
     const topFavorited = Object.entries(favCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     // Shares — top 10
@@ -1031,25 +1026,75 @@ export default function TioJohnny() {
     catEvents.forEach((e) => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
     const topCategories = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // Daily visitors (last 7 days)
+    // Daily visitors (last 7 days) — by real visitor_id
     const dailyVisitors = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
       const dayStr = d.toISOString().slice(0, 10);
-      const daySessions = new Set(
-        events.filter((e) => e.created_at.slice(0, 10) === dayStr).map((e) => e.session_id)
-      );
-      dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: daySessions.size });
+      const dayVids = new Set(events.filter((e) => e.created_at.slice(0, 10) === dayStr).map(getVid));
+      dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: dayVids.size });
     }
 
+    // ── NEW METRICS ──
+
+    // Device breakdown (mobile vs desktop)
+    const deviceEvents = pageViews.filter((e) => e.extra);
+    let mobileCount = 0, desktopCount = 0;
+    deviceEvents.forEach((e) => {
+      try { const d = typeof e.extra === "string" ? JSON.parse(e.extra) : e.extra; if (d.device === "mobile") mobileCount++; else desktopCount++; } catch (_) {}
+    });
+
+    // Engagement rate — % of visitors who viewed at least one profile
+    const visitorsWhoViewedProfile = new Set(profileViews.map(getVid));
+    const engagementRate = allVisitors.size > 0 ? Math.round((visitorsWhoViewedProfile.size / allVisitors.size) * 100) : 0;
+
+    // Average profiles viewed per visitor
+    const avgProfilesPerVisitor = allVisitors.size > 0 ? (profileViews.length / allVisitors.size).toFixed(1) : "0";
+
+    // Bounce rate — visitors with only page_view events (no profile_view, no favorite, no swipe)
+    const interactiveTypes = new Set(["profile_view", "favorite", "swipe_like", "swipe_skip", "share", "contact_whatsapp", "contact_call", "contact_instagram"]);
+    const interactedVisitors = new Set(events.filter((e) => interactiveTypes.has(e.event_type)).map(getVid));
+    const bounceRate = allVisitors.size > 0 ? Math.round(((allVisitors.size - interactedVisitors.size) / allVisitors.size) * 100) : 0;
+
+    // Return visitors — visitors seen on more than one distinct day
+    const visitorDays = {};
+    events.forEach((e) => {
+      const vid = getVid(e);
+      const day = e.created_at.slice(0, 10);
+      if (!visitorDays[vid]) visitorDays[vid] = new Set();
+      visitorDays[vid].add(day);
+    });
+    const returnVisitors = Object.values(visitorDays).filter((days) => days.size > 1).length;
+
+    // Contact clicks
+    const contactWa = events.filter((e) => e.event_type === "contact_whatsapp").length;
+    const contactCall = events.filter((e) => e.event_type === "contact_call").length;
+    const contactIg = events.filter((e) => e.event_type === "contact_instagram").length;
+
+    // Peak hours (0-23)
+    const hourCounts = new Array(24).fill(0);
+    events.forEach((e) => {
+      try { const h = new Date(e.created_at).getHours(); hourCounts[h]++; } catch (_) {}
+    });
+    const peakHour = hourCounts.indexOf(Math.max(...hourCounts));
+
     setAnalyticsData({
-      visitors: { today: todaySessions.size, week: weekSessions.size, month: allSessions.size },
-      views: { today: todayViews, week: weekViews, month: pageViews.length },
+      visitors: { today: todayVisitors.size, week: weekVisitors.size, month: allVisitors.size },
+      sessions: { today: todaySessions, week: weekSessions, month: monthSessions },
       topViewed, topFavorited, topShared,
       pasarela: { likes: swipeLikes, skips: swipeSkips, total: swipeTotal },
       topCategories,
       dailyVisitors,
       totalEvents: events.length,
+      // New metrics
+      devices: { mobile: mobileCount, desktop: desktopCount },
+      engagementRate,
+      avgProfilesPerVisitor,
+      bounceRate,
+      returnVisitors,
+      contacts: { whatsapp: contactWa, call: contactCall, instagram: contactIg, total: contactWa + contactCall + contactIg },
+      peakHour,
+      hourCounts,
     });
     setAnalyticsLoading(false);
   };
@@ -1722,9 +1767,9 @@ export default function TioJohnny() {
                 {/* Visitors summary */}
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.views.today} visitas` },
-                    { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.views.week} visitas` },
-                    { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.views.month} visitas` },
+                    { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.sessions.today} sesiones` },
+                    { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.sessions.week} sesiones` },
+                    { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones` },
                   ].map((s) => (
                     <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
                       <div className="text-2xl font-bold text-white">{s.value}</div>
@@ -1734,9 +1779,82 @@ export default function TioJohnny() {
                   ))}
                 </div>
 
+                {/* Engagement metrics */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: "Engagement", value: analyticsData.engagementRate + "%", sub: "vieron un perfil", color: "#22c55e" },
+                    { label: "Rebote", value: analyticsData.bounceRate + "%", sub: "se fueron sin interactuar", color: "#f43f5e" },
+                    { label: "Perfiles/Visita", value: analyticsData.avgProfilesPerVisitor, sub: "promedio", color: "#60a5fa" },
+                    { label: "Recurrentes", value: analyticsData.returnVisitors, sub: "volvieron otro día", color: "#f59e0b" },
+                  ].map((s) => (
+                    <div key={s.label} className="rounded-xl p-3" style={{ background: "#1e1e3a" }}>
+                      <div className="text-xl font-bold" style={{ color: s.color }}>{s.value}</div>
+                      <div className="text-xs font-semibold text-white">{s.label}</div>
+                      <div style={{ fontSize: 10, color: "#4a4a6a" }}>{s.sub}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Device breakdown */}
+                {(analyticsData.devices.mobile + analyticsData.devices.desktop > 0) && (
+                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Dispositivos</h3>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <div className="flex rounded-full overflow-hidden" style={{ height: 12 }}>
+                          {analyticsData.devices.mobile > 0 && <div style={{ width: `${(analyticsData.devices.mobile / (analyticsData.devices.mobile + analyticsData.devices.desktop)) * 100}%`, background: "#8B5CF6" }} />}
+                          {analyticsData.devices.desktop > 0 && <div style={{ width: `${(analyticsData.devices.desktop / (analyticsData.devices.mobile + analyticsData.devices.desktop)) * 100}%`, background: "#60a5fa" }} />}
+                        </div>
+                      </div>
+                      <div className="flex gap-3 text-xs">
+                        <span style={{ color: "#8B5CF6" }}>{analyticsData.devices.mobile} móvil</span>
+                        <span style={{ color: "#60a5fa" }}>{analyticsData.devices.desktop} desktop</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Contact clicks */}
+                {analyticsData.contacts.total > 0 && (
+                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#22c55e" }}>Contactos (intención de contratar)</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="text-center">
+                        <div className="text-lg font-bold" style={{ color: "#25D366" }}>{analyticsData.contacts.whatsapp}</div>
+                        <div style={{ fontSize: 10, color: "#7878a0" }}>WhatsApp</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold" style={{ color: "#8B5CF6" }}>{analyticsData.contacts.call}</div>
+                        <div style={{ fontSize: 10, color: "#7878a0" }}>Llamadas</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold" style={{ color: "#E1306C" }}>{analyticsData.contacts.instagram}</div>
+                        <div style={{ fontSize: 10, color: "#7878a0" }}>Instagram</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Peak hour */}
+                <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                  <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Hora Pico</h3>
+                  <p className="text-lg font-bold text-white">{analyticsData.peakHour}:00 - {analyticsData.peakHour + 1}:00</p>
+                  <div className="flex items-end gap-px mt-2" style={{ height: 40 }}>
+                    {analyticsData.hourCounts.map((c, i) => {
+                      const max = Math.max(...analyticsData.hourCounts, 1);
+                      return <div key={i} className="flex-1 rounded-t" style={{ height: Math.max((c / max) * 36, 1), background: i === analyticsData.peakHour ? "#8B5CF6" : "#2a2a4a", minWidth: 2 }} />;
+                    })}
+                  </div>
+                  <div className="flex justify-between mt-1">
+                    <span style={{ fontSize: 8, color: "#4a4a6a" }}>0h</span>
+                    <span style={{ fontSize: 8, color: "#4a4a6a" }}>12h</span>
+                    <span style={{ fontSize: 8, color: "#4a4a6a" }}>23h</span>
+                  </div>
+                </div>
+
                 {/* Daily visitors chart */}
                 <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                  <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Visitantes (últimos 7 días)</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Visitantes Únicos (últimos 7 días)</h3>
                   <div className="flex items-end justify-between gap-1" style={{ height: 100 }}>
                     {analyticsData.dailyVisitors.map((d, i) => {
                       const max = Math.max(...analyticsData.dailyVisitors.map((x) => x.count), 1);
@@ -2207,14 +2325,14 @@ export default function TioJohnny() {
 
         <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-4" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
           {/* WhatsApp */}
-          <a href={`https://wa.me/${(t.phone || "").replace("+", "")}`} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+          <a href={`https://wa.me/${(t.phone || "").replace("+", "")}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("contact_whatsapp", t.id)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
             <div className="w-13 h-13 rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#25D366" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
             </div>
             <span className="text-xs font-semibold" style={{ color: "#25D366" }}>WhatsApp</span>
           </a>
           {/* Call */}
-          <a href={`tel:${t.phone}`} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+          <a href={`tel:${t.phone}`} onClick={() => trackEvent("contact_call", t.id)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
             <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#8B5CF6" }}>
               <Phone size={20} color="#fff" />
             </div>
@@ -2222,7 +2340,7 @@ export default function TioJohnny() {
           </a>
           {/* Instagram (only if they have one) */}
           {t.instagram && (
-            <a href={`https://instagram.com/${t.instagram.replace("@", "")}`} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+            <a href={`https://instagram.com/${t.instagram.replace("@", "")}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("contact_instagram", t.id)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
               <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
               </div>
