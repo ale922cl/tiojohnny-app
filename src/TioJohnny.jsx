@@ -231,6 +231,8 @@ export default function TioJohnny() {
   const [filterNationality, setFilterNationality] = useState([]); // multi-select
   const [filterEyes, setFilterEyes] = useState([]);               // multi-select
   const [filterHair, setFilterHair] = useState([]);               // multi-select
+  const [filterLocation, setFilterLocation] = useState([]);       // multi-select (Comuna)
+  const [filterDomicilio, setFilterDomicilio] = useState(false);  // toggle
   const [filterAgeMin, setFilterAgeMin] = useState("");           // dropdown
   const [filterAgeMax, setFilterAgeMax] = useState("");           // dropdown
   const [filterHeightMin, setFilterHeightMin] = useState("");     // dropdown
@@ -460,8 +462,8 @@ export default function TioJohnny() {
     return [];
   };
 
-  const hasActiveFilters = !!(filterNationality.length || filterAgeMin || filterAgeMax || filterHeightMin || filterHeightMax || filterEyes.length || filterHair.length);
-  const clearAllFilters = () => { setFilterNationality([]); setFilterAgeMin(""); setFilterAgeMax(""); setFilterHeightMin(""); setFilterHeightMax(""); setFilterEyes([]); setFilterHair([]); };
+  const hasActiveFilters = !!(filterNationality.length || filterAgeMin || filterAgeMax || filterHeightMin || filterHeightMax || filterEyes.length || filterHair.length || filterLocation.length || filterDomicilio);
+  const clearAllFilters = () => { setFilterNationality([]); setFilterAgeMin(""); setFilterAgeMax(""); setFilterHeightMin(""); setFilterHeightMax(""); setFilterEyes([]); setFilterHair([]); setFilterLocation([]); setFilterDomicilio(false); };
 
   // Close filter dropdowns on outside click
   useEffect(() => {
@@ -482,6 +484,7 @@ export default function TioJohnny() {
     nationality: uniqueVals("nationality"),
     eyes: uniqueVals("eyes"),
     hair: uniqueVals("hair"),
+    location: uniqueVals("location"),
   };
   // Collect unique ages and heights for range dropdowns
   const allAges = [...new Set(allNonArchived.map((t) => parseNum(t.age)).filter((a) => a !== null && a > 0))].sort((a, b) => a - b);
@@ -497,6 +500,8 @@ export default function TioJohnny() {
     if (filterNationality.length && !filterNationality.some((v) => (t.nationality || "").toLowerCase() === v.toLowerCase())) return false;
     if (filterEyes.length && !filterEyes.some((v) => (t.eyes || "").toLowerCase() === v.toLowerCase())) return false;
     if (filterHair.length && !filterHair.some((v) => (t.hair || "").toLowerCase() === v.toLowerCase())) return false;
+    if (filterLocation.length && !filterLocation.some((v) => (t.location || "").toLowerCase() === v.toLowerCase())) return false;
+    if (filterDomicilio && !getTalentCategories(t).some((c) => c.toLowerCase() === "domicilio")) return false;
     if (filterAgeMin || filterAgeMax) {
       const age = parseNum(t.age);
       if (age === null) return false;
@@ -2049,9 +2054,21 @@ export default function TioJohnny() {
       {filtersOpen && (
         <div className="px-4 pb-3" style={{ animation: "fadeSlideUp 0.2s ease both" }}>
           <div className="rounded-2xl p-4 space-y-4" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
+            {/* Domicilio toggle */}
+            <button
+              onClick={() => setFilterDomicilio((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all"
+              style={{ background: filterDomicilio ? "rgba(139,92,246,0.15)" : "#12122a", border: filterDomicilio ? "1px solid #8B5CF6" : "1px solid #2a2a4a", color: filterDomicilio ? "#fff" : "#7878a0" }}
+            >
+              <span>Domicilio</span>
+              <div className="w-5 h-5 rounded flex-shrink-0 flex items-center justify-center" style={{ background: filterDomicilio ? "#8B5CF6" : "transparent", border: filterDomicilio ? "none" : "1.5px solid #4a4a6a" }}>
+                {filterDomicilio && <Check size={12} color="#fff" />}
+              </div>
+            </button>
             {/* Multi-select dropdowns */}
-            <div className="grid grid-cols-3 gap-2" ref={filterDropRef}>
+            <div className="grid grid-cols-2 gap-2" ref={filterDropRef}>
               {[
+                { key: "location", label: "Comuna", options: filterOptions.location, selected: filterLocation, setSelected: setFilterLocation },
                 { key: "nationality", label: "Nacionalidad", options: filterOptions.nationality, selected: filterNationality, setSelected: setFilterNationality },
                 { key: "eyes", label: "Ojos", options: filterOptions.eyes, selected: filterEyes, setSelected: setFilterEyes },
                 { key: "hair", label: "Cabello", options: filterOptions.hair, selected: filterHair, setSelected: setFilterHair },
