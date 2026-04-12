@@ -6,6 +6,29 @@ import {
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
+// ─── DEBUG: Show errors on screen (remove after fixing) ─────────────
+if (typeof window !== "undefined") {
+  window.__TJ_ERRORS = [];
+  window.onerror = (msg, src, line, col, err) => {
+    window.__TJ_ERRORS.push(`${msg} (${src}:${line}:${col})`);
+    const el = document.getElementById("tj-error-overlay");
+    if (el) el.textContent = window.__TJ_ERRORS.join("\n");
+    else {
+      const d = document.createElement("div");
+      d.id = "tj-error-overlay";
+      d.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:red;color:white;padding:16px;font-size:12px;white-space:pre-wrap;max-height:50vh;overflow:auto;";
+      d.textContent = window.__TJ_ERRORS.join("\n");
+      document.body.appendChild(d);
+    }
+  };
+  window.onunhandledrejection = (e) => {
+    const msg = e.reason?.message || e.reason || "unhandled promise";
+    window.__TJ_ERRORS.push("Promise: " + msg);
+    const el = document.getElementById("tj-error-overlay");
+    if (el) el.textContent = window.__TJ_ERRORS.join("\n");
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUPABASE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
