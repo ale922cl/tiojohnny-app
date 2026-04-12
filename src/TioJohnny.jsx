@@ -94,13 +94,14 @@ function getSessionId() {
   return _sessionId;
 }
 
-function trackEvent(eventType, talentId = null, category = null) {
+function trackEvent(eventType, talentId = null, category = null, extra = null) {
   const payload = {
     event_type: eventType,
     session_id: getSessionId(),
   };
   if (talentId) payload.talent_id = talentId;
   if (category) payload.category = category;
+  if (extra) payload.extra = extra; // JSON field for click coords etc.
   // Fire and forget — don't block UI
   supabase.from("analytics_events").insert([payload]).then(() => {});
 }
@@ -211,6 +212,39 @@ const ANIM_CSS = `
   to   { opacity: 1; transform: translateY(0); }
 }
 .card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+@keyframes heartbeatGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(244,63,94,0.4); }
+  50%  { box-shadow: 0 0 14px 4px rgba(244,63,94,0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); }
+}
+.heartbeat-fav { animation: heartbeatGlow 1.2s ease-in-out 3; }
+@keyframes splashLogo {
+  0%   { opacity: 0; transform: scale(0.7); filter: blur(8px); }
+  40%  { opacity: 1; transform: scale(1.05); filter: blur(0); }
+  60%  { opacity: 1; transform: scale(0.98); filter: blur(0); }
+  75%  { opacity: 1; transform: scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: scale(1.1); filter: blur(4px); }
+}
+@keyframes splashFlare {
+  0%   { opacity: 0; transform: scale(0.5) rotate(0deg); }
+  50%  { opacity: 0.6; transform: scale(1.2) rotate(90deg); }
+  100% { opacity: 0; transform: scale(2) rotate(180deg); }
+}
+@keyframes splashBg {
+  0%   { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes gridMorphIn {
+  from { opacity: 0; transform: scale(0.85) translateY(16px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.grid-morph-in { animation: gridMorphIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+@keyframes gridMorphOut {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 0; transform: scale(0.85) translateY(-12px); }
+}
+.grid-morph-out { animation: gridMorphOut 0.2s ease-in both; }
 .modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
 .heart-pop   { animation: heartPop 0.4s cubic-bezier(0.22,1,0.36,1); }
@@ -323,7 +357,24 @@ export default function TioJohnny() {
   const [pillPopCat, setPillPopCat] = useState(null);
   const [badgeBounce, setBadgeBounce] = useState(false);
   const [cardAnimKey, setCardAnimKey] = useState(0); // triggers re-entrance animation
+  const [heartbeatIds, setHeartbeatIds] = useState([]); // cards doing heartbeat glow
   const favPillRef = useRef(null);
+
+  // ─── Cinematic splash state ────────────────────────────────────────
+  const [showSplash, setShowSplash] = useState(true);
+  const SPLASH_ENABLED = true; // flip to false to disable splash
+
+  // ─── Currency state ────────────────────────────────────────────────
+  const [currency, setCurrency] = useState("CLP"); // "CLP" | "USD" | "EUR"
+  const [exchangeRates, setExchangeRates] = useState({ CLP: 1, USD: 0, EUR: 0 });
+
+  // ─── Category morph state ──────────────────────────────────────────
+  const [gridMorphing, setGridMorphing] = useState(false);
+  const prevCategoryRef = useRef("Todas");
+
+  // ─── Heatmap state ─────────────────────────────────────────────────
+  const [heatmapData, setHeatmapData] = useState(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
 
   const searchRef = useRef(null);
   const fileRef = useRef(null);
@@ -359,6 +410,58 @@ export default function TioJohnny() {
     // Auto-hide after 4 seconds
     setTimeout(() => setCountersShown(false), 4000);
   }, [talents]);
+
+  // ─── Splash timer ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!SPLASH_ENABLED) { setShowSplash(false); return; }
+    const timer = setTimeout(() => setShowSplash(false), 2200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ─── Fetch exchange rates ─────────────────────────────────────────
+  useEffect(() => {
+    // Simple fallback rates if API fails
+    const fallback = { CLP: 1, USD: 0.00106, EUR: 0.00098 };
+    fetch("https://api.exchangerate-host.com/latest?base=CLP&symbols=USD,EUR")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && d.rates) {
+          setExchangeRates({ CLP: 1, USD: d.rates.USD || fallback.USD, EUR: d.rates.EUR || fallback.EUR });
+        } else {
+          setExchangeRates(fallback);
+        }
+      })
+      .catch(() => setExchangeRates(fallback));
+  }, []);
+
+  // ─── Currency formatter ───────────────────────────────────────────
+  const formatRate = useCallback((rateStr) => {
+    if (!rateStr || currency === "CLP") return rateStr;
+    // Try to parse CLP amount from string like "$80.000 / hr" or "80000"
+    const cleaned = rateStr.replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".");
+    const num = parseFloat(cleaned);
+    if (isNaN(num)) return rateStr;
+    const converted = num * exchangeRates[currency];
+    const suffix = rateStr.includes("/") ? " / " + rateStr.split("/").pop().trim() : "";
+    if (currency === "USD") return `$${Math.round(converted).toLocaleString("en-US")} USD${suffix}`;
+    if (currency === "EUR") return `€${Math.round(converted).toLocaleString("de-DE")}${suffix}`;
+    return rateStr;
+  }, [currency, exchangeRates]);
+
+  // ─── Magnetic tilt for grid cards ─────────────────────────────────
+  const handleCardPointerMove = useCallback((e) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5; // -0.5 to 0.5
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    card.style.transform = `perspective(600px) rotateY(${x * 8}deg) rotateX(${-y * 8}deg) scale(1.03)`;
+    card.style.transition = "transform 0.1s ease-out";
+  }, []);
+  const handleCardPointerLeave = useCallback((e) => {
+    const card = e.currentTarget;
+    card.style.transform = "perspective(600px) rotateY(0deg) rotateX(0deg) scale(1)";
+    card.style.transition = "transform 0.4s cubic-bezier(0.22,1,0.36,1)";
+  }, []);
 
   // ─── Load data from Supabase on mount ───────────────────────────────
   useEffect(() => {
@@ -481,6 +584,9 @@ export default function TioJohnny() {
     setTimeout(() => setHeartPopId(null), 450);
 
     if (adding) {
+      // Heartbeat glow on the card
+      setHeartbeatIds((prev) => [...prev, id]);
+      setTimeout(() => setHeartbeatIds((prev) => prev.filter((x) => x !== id)), 3600);
       // Bounce the favorites badge
       setBadgeBounce(true);
       setTimeout(() => setBadgeBounce(false), 450);
@@ -917,10 +1023,39 @@ export default function TioJohnny() {
     setAnalyticsLoading(false);
   };
 
-  // Animated category switching
+  // ─── Heatmap / Attention Map data ──────────────────────────────────
+  const fetchHeatmap = async () => {
+    setHeatmapLoading(true);
+    const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { data: events } = await supabase
+      .from("analytics_events")
+      .select("event_type, talent_id")
+      .gte("created_at", monthAgo);
+    if (!events) { setHeatmapLoading(false); return; }
+    // Group by talent: count profile_view, share, favorite, swipe_like per talent
+    const map = {};
+    events.forEach((e) => {
+      if (!e.talent_id) return;
+      if (!map[e.talent_id]) map[e.talent_id] = { views: 0, favs: 0, shares: 0, likes: 0 };
+      if (e.event_type === "profile_view") map[e.talent_id].views++;
+      if (e.event_type === "favorite") map[e.talent_id].favs++;
+      if (e.event_type === "share") map[e.talent_id].shares++;
+      if (e.event_type === "swipe_like") map[e.talent_id].likes++;
+    });
+    setHeatmapData(map);
+    setHeatmapLoading(false);
+  };
+
+  // Animated category switching with morph transition
   const switchCategory = useCallback((cat) => {
-    setActiveCategory(cat);
-    setCardAnimKey((k) => k + 1);
+    if (cat === prevCategoryRef.current) return;
+    setGridMorphing(true); // trigger exit animation
+    setTimeout(() => {
+      prevCategoryRef.current = cat;
+      setActiveCategory(cat);
+      setCardAnimKey((k) => k + 1);
+      setGridMorphing(false); // trigger enter animation
+    }, 200); // matches gridMorphOut duration
     setPillPopCat(cat);
     setTimeout(() => setPillPopCat(null), 350);
     trackEvent("category_view", null, cat);
@@ -1657,6 +1792,60 @@ export default function TioJohnny() {
                   </div>
                 )}
 
+                {/* ── Attention Heatmap ── */}
+                <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-widest flex items-center gap-1" style={{ color: "#f59e0b" }}>
+                      <TrendingUp size={12} /> Mapa de Atención
+                    </h3>
+                    <button onClick={fetchHeatmap} className="text-xs px-2.5 py-1 rounded-full" style={{ background: "#12122a", color: "#f59e0b" }}>
+                      {heatmapLoading ? "..." : heatmapData ? "Actualizar" : "Cargar"}
+                    </button>
+                  </div>
+                  {heatmapData && (
+                    <div className="space-y-2">
+                      {Object.entries(heatmapData)
+                        .map(([tid, d]) => ({ tid, total: d.views + d.favs + d.shares + d.likes, ...d }))
+                        .sort((a, b) => b.total - a.total)
+                        .slice(0, 10)
+                        .map((item, i) => {
+                          const t = talents.find((x) => x.id === parseInt(item.tid));
+                          if (!t) return null;
+                          const maxTotal = Object.values(heatmapData).reduce((m, d) => Math.max(m, d.views + d.favs + d.shares + d.likes), 1);
+                          const pct = (item.total / maxTotal) * 100;
+                          // Heat color based on intensity
+                          const heat = pct / 100;
+                          const heatColor = `rgb(${Math.round(255 * Math.min(heat * 2, 1))}, ${Math.round(180 * Math.max(0, 1 - heat * 1.5))}, ${Math.round(60 * (1 - heat))})`;
+                          return (
+                            <div key={item.tid} className="flex items-center gap-2">
+                              <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
+                              <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0" style={{ boxShadow: `0 0 ${8 + heat * 12}px ${heatColor}44` }}>
+                                <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-white truncate">{t.name}</p>
+                                <div className="flex gap-2 mt-0.5" style={{ fontSize: 9 }}>
+                                  <span style={{ color: "#8B5CF6" }}>{item.views} <EyeIcon size={8} style={{ display: "inline" }} /></span>
+                                  <span style={{ color: "#f43f5e" }}>{item.favs} ♥</span>
+                                  <span style={{ color: "#60a5fa" }}>{item.shares} ↗</span>
+                                  <span style={{ color: "#22c55e" }}>{item.likes} ✓</span>
+                                </div>
+                              </div>
+                              <div className="w-16">
+                                <div className="rounded-full overflow-hidden" style={{ height: 6, background: "#12122a" }}>
+                                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, #f59e0b, ${heatColor})` }} />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                  {!heatmapData && !heatmapLoading && (
+                    <p className="text-xs text-center py-3" style={{ color: "#4a4a6a" }}>Presiona "Cargar" para ver el mapa de atención</p>
+                  )}
+                </div>
+
                 <p className="text-xs text-center pb-4" style={{ color: "#4a4a6a" }}>
                   {analyticsData.totalEvents} eventos registrados (últimos 30 días)
                 </p>
@@ -1933,7 +2122,7 @@ export default function TioJohnny() {
         <div className="flex-1 overflow-y-auto px-5 pb-32" style={{ color: "#e2e2f0" }}>
           <div className="mt-2">
             <h2 className="text-2xl font-bold text-white">{t.name}</h2>
-            <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{t.specialty} &middot; {t.rate}</p>
+            <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{t.specialty} &middot; {formatRate(t.rate)}</p>
           </div>
           <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: "#9898b0" }}>
             <span className="flex items-center gap-1"><MapPin size={12} /> {t.location}</span>
@@ -2144,6 +2333,21 @@ export default function TioJohnny() {
         </div>
       </div>
 
+      {/* ═══ CURRENCY TOGGLE ═══ */}
+      <div className="px-4 pb-2 flex items-center gap-1.5">
+        <span style={{ fontSize: 10, color: "#4a4a6a" }}>Moneda:</span>
+        {["CLP", "USD", "EUR"].map((c) => (
+          <button
+            key={c}
+            onClick={() => setCurrency(c)}
+            className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+            style={{ background: currency === c ? "#8B5CF6" : "#1e1e3a", color: currency === c ? "#fff" : "#6b6b90", border: currency === c ? "none" : "1px solid #2a2a4a" }}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
       {/* ═══ FILTER PANEL ═══ */}
       {filtersOpen && (
         <div className="px-4 pb-3 relative" style={{ animation: "fadeSlideUp 0.2s ease both", zIndex: 20 }}>
@@ -2238,16 +2442,19 @@ export default function TioJohnny() {
       {/* ═══ GRID VIEW ═══ */}
       {viewMode === "grid" && (
         <>
-          <div className="grid grid-cols-2 gap-3 px-3 pb-8">
+          <div className={`grid grid-cols-2 gap-3 px-3 pb-8 ${gridMorphing ? "grid-morph-out" : ""}`}>
             {filtered.map((t, idx) => {
               const isFav = favorites.includes(t.id);
+              const isHeartbeat = heartbeatIds.includes(t.id);
               const lp = makeLongPress(t);
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
                   {...lp}
-                  className="card-enter rounded-2xl overflow-hidden cursor-pointer"
-                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s`, WebkitUserSelect: "none", userSelect: "none" }}
+                  onPointerMove={handleCardPointerMove}
+                  onPointerLeave={handleCardPointerLeave}
+                  className={`grid-morph-in rounded-2xl overflow-hidden cursor-pointer ${isHeartbeat ? "heartbeat-fav" : ""}`}
+                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform" }}
                 >
                   <div className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${8 + (idx % 4) * 2}s ease-in-out infinite alternate`, willChange: "transform" }} loading="lazy" />
@@ -2262,7 +2469,7 @@ export default function TioJohnny() {
                     <div className="absolute bottom-0 left-0 right-0 p-3">
                       <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
                       <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
-                      <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{t.rate}</p>
+                      <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{formatRate(t.rate)}</p>
                     </div>
                   </div>
                 </div>
@@ -2367,7 +2574,7 @@ export default function TioJohnny() {
                     <h2 className="text-2xl font-bold text-white">{filtered[swipeIndex].name}</h2>
                     <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{filtered[swipeIndex].specialty}</p>
                     <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#b8b8d0" }}>
-                      <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {filtered[swipeIndex].rate}
+                      <MapPin size={12} /> {filtered[swipeIndex].location || "Sin ubicación"} &middot; {formatRate(filtered[swipeIndex].rate)}
                     </p>
                     <button
                       onClick={(e) => { e.stopPropagation(); openProfile(filtered[swipeIndex]); }}
@@ -2481,6 +2688,21 @@ export default function TioJohnny() {
           </div>
         );
       })()}
+
+      {/* ── Cinematic Splash ── */}
+      {showSplash && SPLASH_ENABLED && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center" style={{ background: "#12122a", animation: "splashBg 2.2s ease both" }}>
+          {/* Lens flare */}
+          <div className="absolute" style={{ width: 300, height: 300, background: "radial-gradient(circle, rgba(139,92,246,0.3) 0%, transparent 60%)", animation: "splashFlare 2s ease both" }} />
+          {/* Logo / Title */}
+          <div className="text-center" style={{ animation: "splashLogo 2.2s cubic-bezier(0.22,1,0.36,1) both" }}>
+            <h1 className="text-5xl font-black tracking-tight" style={{ fontFamily: "'Sora', sans-serif", background: "linear-gradient(135deg, #8B5CF6, #ec4899, #8B5CF6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              Tío Johnny
+            </h1>
+            <p className="text-sm mt-2 font-medium" style={{ color: "#6b6b90" }}>Talento Chileno</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Floating Hearts Overlay ── */}
       {floatingHearts.length > 0 && (
