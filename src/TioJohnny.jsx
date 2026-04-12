@@ -360,9 +360,9 @@ export default function TioJohnny() {
   const [heartbeatIds, setHeartbeatIds] = useState([]); // cards doing heartbeat glow
   const favPillRef = useRef(null);
 
-  // ─── Cinematic splash state ────────────────────────────────────────
-  const [showSplash, setShowSplash] = useState(true);
-  const SPLASH_ENABLED = true; // flip to false to disable splash
+  // ─── Cinematic splash state (disabled) ──────────────────────────────
+  const [showSplash, setShowSplash] = useState(false);
+  const SPLASH_ENABLED = false;
 
   // ─── Currency state ────────────────────────────────────────────────
   const [currency, setCurrency] = useState("CLP"); // "CLP" | "USD" | "EUR"
@@ -1092,7 +1092,7 @@ export default function TioJohnny() {
   const didLongPressRef = useRef(false);
   const makeLongPress = (t) => ({
     onPointerDown: () => { didLongPressRef.current = false; longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400); },
-    onPointerUp: () => { clearTimeout(longPressTimerRef.current); if (!didLongPressRef.current) openProfile(t); },
+    onPointerUp: (e) => { clearTimeout(longPressTimerRef.current); if (!didLongPressRef.current && !e.target.closest("button")) openProfile(t); },
     onPointerLeave: () => { clearTimeout(longPressTimerRef.current); },
     onPointerCancel: () => { clearTimeout(longPressTimerRef.current); },
   });
@@ -2301,7 +2301,6 @@ export default function TioJohnny() {
 
       <div className="px-4 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <p className="text-xs" style={{ color: "#6b6b90" }}>{filtered.length} modelo{filtered.length !== 1 ? "s" : ""}</p>
           <button
             onClick={() => setFiltersOpen((o) => !o)}
             className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
@@ -2314,6 +2313,18 @@ export default function TioJohnny() {
               Limpiar
             </button>
           )}
+          <div className="flex items-center gap-1">
+            {["CLP", "USD", "EUR"].map((c) => (
+              <button
+                key={c}
+                onClick={() => setCurrency(c)}
+                className="px-2 py-1 rounded-full text-xs font-semibold transition-all"
+                style={{ background: currency === c ? "#8B5CF6" : "transparent", color: currency === c ? "#fff" : "#4a4a6a" }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-1 rounded-full p-0.5" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
           <button
@@ -2331,21 +2342,6 @@ export default function TioJohnny() {
             <Layers size={12} /> Pasarela
           </button>
         </div>
-      </div>
-
-      {/* ═══ CURRENCY TOGGLE ═══ */}
-      <div className="px-4 pb-2 flex items-center gap-1.5">
-        <span style={{ fontSize: 10, color: "#4a4a6a" }}>Moneda:</span>
-        {["CLP", "USD", "EUR"].map((c) => (
-          <button
-            key={c}
-            onClick={() => setCurrency(c)}
-            className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
-            style={{ background: currency === c ? "#8B5CF6" : "#1e1e3a", color: currency === c ? "#fff" : "#6b6b90", border: currency === c ? "none" : "1px solid #2a2a4a" }}
-          >
-            {c}
-          </button>
-        ))}
       </div>
 
       {/* ═══ FILTER PANEL ═══ */}
