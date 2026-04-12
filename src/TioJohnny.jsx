@@ -227,13 +227,13 @@ export default function TioJohnny() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [filterNationality, setFilterNationality] = useState("");
-  const [filterAgeMin, setFilterAgeMin] = useState("");
-  const [filterAgeMax, setFilterAgeMax] = useState("");
-  const [filterHeightMin, setFilterHeightMin] = useState("");
-  const [filterHeightMax, setFilterHeightMax] = useState("");
-  const [filterEyes, setFilterEyes] = useState("");
-  const [filterHair, setFilterHair] = useState("");
+  const [filterNationality, setFilterNationality] = useState([]); // multi-select
+  const [filterEyes, setFilterEyes] = useState([]);               // multi-select
+  const [filterHair, setFilterHair] = useState([]);               // multi-select
+  const [filterAgeMin, setFilterAgeMin] = useState("");           // dropdown
+  const [filterAgeMax, setFilterAgeMax] = useState("");           // dropdown
+  const [filterHeightMin, setFilterHeightMin] = useState("");     // dropdown
+  const [filterHeightMax, setFilterHeightMax] = useState("");     // dropdown
   const [selectedTalent, setSelectedTalent] = useState(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [favorites, setFavorites] = useState([]);
@@ -458,11 +458,24 @@ export default function TioJohnny() {
     return [];
   };
 
-  const hasActiveFilters = !!(filterNationality || filterAgeMin || filterAgeMax || filterHeightMin || filterHeightMax || filterEyes || filterHair);
-  const clearAllFilters = () => { setFilterNationality(""); setFilterAgeMin(""); setFilterAgeMax(""); setFilterHeightMin(""); setFilterHeightMax(""); setFilterEyes(""); setFilterHair(""); };
+  const hasActiveFilters = !!(filterNationality.length || filterAgeMin || filterAgeMax || filterHeightMin || filterHeightMax || filterEyes.length || filterHair.length);
+  const clearAllFilters = () => { setFilterNationality([]); setFilterAgeMin(""); setFilterAgeMax(""); setFilterHeightMin(""); setFilterHeightMax(""); setFilterEyes([]); setFilterHair([]); };
+  const toggleFilter = (arr, setArr, val) => setArr((prev) => prev.includes(val) ? prev.filter((v) => v !== val) : [...prev, val]);
 
   // Parse numeric value from a string like "1.75m", "175cm", "24 años", "58kg"
   const parseNum = (v) => { if (!v) return null; const m = v.match(/[\d.]+/); return m ? parseFloat(m[0]) : null; };
+
+  // Collect unique values from all non-archived talents for filter options
+  const allNonArchived = talents.filter((t) => !t.archived);
+  const uniqueVals = (field) => [...new Set(allNonArchived.map((t) => (t[field] || "").trim()).filter(Boolean))].sort();
+  const filterOptions = {
+    nationality: uniqueVals("nationality"),
+    eyes: uniqueVals("eyes"),
+    hair: uniqueVals("hair"),
+  };
+  // Collect unique ages and heights for range dropdowns
+  const allAges = [...new Set(allNonArchived.map((t) => parseNum(t.age)).filter((a) => a !== null && a > 0))].sort((a, b) => a - b);
+  const allHeights = [...new Set(allNonArchived.map((t) => { let h = parseNum(t.height); if (h && h > 100) h = h / 100; return h; }).filter((h) => h !== null && h > 0))].sort((a, b) => a - b);
 
   const filtered = talents.filter((t) => {
     if (t.archived) return false;
@@ -470,10 +483,10 @@ export default function TioJohnny() {
     const matchCat = activeCategory === "Todas" || (activeCategory === "Favoritas" ? favorites.includes(t.id) : talentCats.includes(activeCategory));
     const matchSearch = !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.specialty || "").toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchCat || !matchSearch) return false;
-    // Advanced filters
-    if (filterNationality && !(t.nationality || "").toLowerCase().includes(filterNationality.toLowerCase())) return false;
-    if (filterEyes && !(t.eyes || "").toLowerCase().includes(filterEyes.toLowerCase())) return false;
-    if (filterHair && !(t.hair || "").toLowerCase().includes(filterHair.toLowerCase())) return false;
+    // Advanced filters (multi-select: match any selected)
+    if (filterNationality.length && !filterNationality.some((v) => (t.nationality || "").toLowerCase() === v.toLowerCase())) return false;
+    if (filterEyes.length && !filterEyes.some((v) => (t.eyes || "").toLowerCase() === v.toLowerCase())) return false;
+    if (filterHair.length && !filterHair.some((v) => (t.hair || "").toLowerCase() === v.toLowerCase())) return false;
     if (filterAgeMin || filterAgeMax) {
       const age = parseNum(t.age);
       if (age === null) return false;
@@ -483,12 +496,9 @@ export default function TioJohnny() {
     if (filterHeightMin || filterHeightMax) {
       let h = parseNum(t.height);
       if (h === null) return false;
-      if (h > 100) h = h / 100; // convert cm to m
-      const hMin = filterHeightMin ? parseFloat(filterHeightMin) : 0;
-      const hMax = filterHeightMax ? parseFloat(filterHeightMax) : 99;
-      const hMinM = hMin > 100 ? hMin / 100 : hMin;
-      const hMaxM = hMax > 100 ? hMax / 100 : hMax;
-      if (h < hMinM || h > hMaxM) return false;
+      if (h > 100) h = h / 100;
+      if (filterHeightMin && h < parseFloat(filterHeightMin)) return false;
+      if (filterHeightMax && h > parseFloat(filterHeightMax)) return false;
     }
     return true;
   });
@@ -2028,39 +2038,62 @@ export default function TioJohnny() {
       {/* ═══ FILTER PANEL ═══ */}
       {filtersOpen && (
         <div className="px-4 pb-3" style={{ animation: "fadeSlideUp 0.2s ease both" }}>
-          <div className="rounded-2xl p-4 space-y-3" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
-            {/* Row 1: Nationality + Eyes + Hair */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { val: filterNationality, set: setFilterNationality, label: "Nacionalidad", ph: "Chilena" },
-                { val: filterEyes, set: setFilterEyes, label: "Ojos", ph: "Café" },
-                { val: filterHair, set: setFilterHair, label: "Cabello", ph: "Castaño" },
-              ].map((f) => (
-                <div key={f.label}>
-                  <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0" }}>{f.label}</label>
-                  <input value={f.val} onChange={(e) => f.set(e.target.value)} placeholder={f.ph} className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} />
-                </div>
-              ))}
-            </div>
-            {/* Row 2: Age range + Height range */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0" }}>Edad</label>
-                <div className="flex items-center gap-1">
-                  <input value={filterAgeMin} onChange={(e) => setFilterAgeMin(e.target.value)} placeholder="18" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" />
-                  <span style={{ fontSize: 10, color: "#4a4a6a" }}>—</span>
-                  <input value={filterAgeMax} onChange={(e) => setFilterAgeMax(e.target.value)} placeholder="35" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" />
+          <div className="rounded-2xl p-4 space-y-4" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
+            {/* Multi-select pill sections */}
+            {[
+              { label: "Nacionalidad", options: filterOptions.nationality, selected: filterNationality, setSelected: setFilterNationality },
+              { label: "Ojos", options: filterOptions.eyes, selected: filterEyes, setSelected: setFilterEyes },
+              { label: "Cabello", options: filterOptions.hair, selected: filterHair, setSelected: setFilterHair },
+            ].map((section) => section.options.length > 0 && (
+              <div key={section.label}>
+                <label className="block mb-2" style={{ fontSize: 10, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{section.label}</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {section.options.map((opt) => {
+                    const active = section.selected.includes(opt);
+                    return (
+                      <button key={opt} onClick={() => toggleFilter(section.selected, section.setSelected, opt)}
+                        className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                        style={{ background: active ? "#8B5CF6" : "#12122a", color: active ? "#fff" : "#9898b0", border: active ? "1px solid #8B5CF6" : "1px solid #2a2a4a" }}
+                      >{opt}</button>
+                    );
+                  })}
                 </div>
               </div>
+            ))}
+            {/* Age range dropdowns */}
+            {allAges.length > 0 && (
               <div>
-                <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0" }}>Altura (m)</label>
-                <div className="flex items-center gap-1">
-                  <input value={filterHeightMin} onChange={(e) => setFilterHeightMin(e.target.value)} placeholder="1.55" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" step="0.01" />
-                  <span style={{ fontSize: 10, color: "#4a4a6a" }}>—</span>
-                  <input value={filterHeightMax} onChange={(e) => setFilterHeightMax(e.target.value)} placeholder="1.80" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" step="0.01" />
+                <label className="block mb-2" style={{ fontSize: 10, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Edad</label>
+                <div className="flex items-center gap-2">
+                  <select value={filterAgeMin} onChange={(e) => setFilterAgeMin(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                    <option value="">Mín</option>
+                    {allAges.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                  <span style={{ fontSize: 11, color: "#4a4a6a" }}>—</span>
+                  <select value={filterAgeMax} onChange={(e) => setFilterAgeMax(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                    <option value="">Máx</option>
+                    {allAges.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
                 </div>
               </div>
-            </div>
+            )}
+            {/* Height range dropdowns */}
+            {allHeights.length > 0 && (
+              <div>
+                <label className="block mb-2" style={{ fontSize: 10, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Altura</label>
+                <div className="flex items-center gap-2">
+                  <select value={filterHeightMin} onChange={(e) => setFilterHeightMin(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                    <option value="">Mín</option>
+                    {allHeights.map((h) => <option key={h} value={h}>{h.toFixed(2)}m</option>)}
+                  </select>
+                  <span style={{ fontSize: 11, color: "#4a4a6a" }}>—</span>
+                  <select value={filterHeightMax} onChange={(e) => setFilterHeightMax(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                    <option value="">Máx</option>
+                    {allHeights.map((h) => <option key={h} value={h}>{h.toFixed(2)}m</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
