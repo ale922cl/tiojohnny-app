@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -226,6 +226,14 @@ export default function TioJohnny() {
   const [activeCategory, setActiveCategory] = useState("Todas");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterNationality, setFilterNationality] = useState("");
+  const [filterAgeMin, setFilterAgeMin] = useState("");
+  const [filterAgeMax, setFilterAgeMax] = useState("");
+  const [filterHeightMin, setFilterHeightMin] = useState("");
+  const [filterHeightMax, setFilterHeightMax] = useState("");
+  const [filterEyes, setFilterEyes] = useState("");
+  const [filterHair, setFilterHair] = useState("");
   const [selectedTalent, setSelectedTalent] = useState(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [favorites, setFavorites] = useState([]);
@@ -246,6 +254,7 @@ export default function TioJohnny() {
   const [formHair, setFormHair] = useState("");
   const [formAge, setFormAge] = useState("");
   const [formSizes, setFormSizes] = useState("");
+  const [formNationality, setFormNationality] = useState("");
   const [formPhotos, setFormPhotos] = useState([]); // array of URLs (already uploaded)
   const [formInstagram, setFormInstagram] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -449,12 +458,39 @@ export default function TioJohnny() {
     return [];
   };
 
+  const hasActiveFilters = !!(filterNationality || filterAgeMin || filterAgeMax || filterHeightMin || filterHeightMax || filterEyes || filterHair);
+  const clearAllFilters = () => { setFilterNationality(""); setFilterAgeMin(""); setFilterAgeMax(""); setFilterHeightMin(""); setFilterHeightMax(""); setFilterEyes(""); setFilterHair(""); };
+
+  // Parse numeric value from a string like "1.75m", "175cm", "24 años", "58kg"
+  const parseNum = (v) => { if (!v) return null; const m = v.match(/[\d.]+/); return m ? parseFloat(m[0]) : null; };
+
   const filtered = talents.filter((t) => {
-    if (t.archived) return false; // never show archived in public
+    if (t.archived) return false;
     const talentCats = getTalentCategories(t);
     const matchCat = activeCategory === "Todas" || (activeCategory === "Favoritas" ? favorites.includes(t.id) : talentCats.includes(activeCategory));
     const matchSearch = !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.specialty || "").toLowerCase().includes(searchQuery.toLowerCase());
-    return matchCat && matchSearch;
+    if (!matchCat || !matchSearch) return false;
+    // Advanced filters
+    if (filterNationality && !(t.nationality || "").toLowerCase().includes(filterNationality.toLowerCase())) return false;
+    if (filterEyes && !(t.eyes || "").toLowerCase().includes(filterEyes.toLowerCase())) return false;
+    if (filterHair && !(t.hair || "").toLowerCase().includes(filterHair.toLowerCase())) return false;
+    if (filterAgeMin || filterAgeMax) {
+      const age = parseNum(t.age);
+      if (age === null) return false;
+      if (filterAgeMin && age < parseFloat(filterAgeMin)) return false;
+      if (filterAgeMax && age > parseFloat(filterAgeMax)) return false;
+    }
+    if (filterHeightMin || filterHeightMax) {
+      let h = parseNum(t.height);
+      if (h === null) return false;
+      if (h > 100) h = h / 100; // convert cm to m
+      const hMin = filterHeightMin ? parseFloat(filterHeightMin) : 0;
+      const hMax = filterHeightMax ? parseFloat(filterHeightMax) : 99;
+      const hMinM = hMin > 100 ? hMin / 100 : hMin;
+      const hMaxM = hMax > 100 ? hMax / 100 : hMax;
+      if (h < hMinM || h > hMaxM) return false;
+    }
+    return true;
   });
 
   // ─── Auth handlers ─────────────────────────────────────────────────────
@@ -502,6 +538,7 @@ export default function TioJohnny() {
       setFormHair(talent.hair || "");
       setFormAge(talent.age || "");
       setFormSizes(talent.sizes || "");
+      setFormNationality(talent.nationality || "");
       setFormPhotos(talent.photos || []);
       setFormInstagram(talent.instagram || "");
     } else {
@@ -511,6 +548,7 @@ export default function TioJohnny() {
       setFormAbout(""); setFormExperience("");
       setFormHeight(""); setFormWeight(""); setFormEyes("");
       setFormHair(""); setFormAge(""); setFormSizes("");
+      setFormNationality("");
       setFormPhotos([]); setFormInstagram("");
     }
     setView("editor");
@@ -562,6 +600,7 @@ export default function TioJohnny() {
       hair: formHair,
       age: formAge,
       sizes: formSizes,
+      nationality: formNationality,
       photos: formPhotos,
       instagram: formInstagram,
     };
@@ -679,6 +718,7 @@ export default function TioJohnny() {
       hair: get("hair", "cabello", "pelo"),
       age: get("age", "edad"),
       sizes: get("sizes", "talla", "tallas"),
+      nationality: get("nationality", "nacionalidad", "pais", "país"),
       instagram: get("instagram", "ig", "insta"),
       photos: [],
       archived: false,
@@ -1331,6 +1371,7 @@ export default function TioJohnny() {
                   { val: formHair, set: setFormHair, label: "Cabello", ph: "Castaño" },
                   { val: formAge, set: setFormAge, label: "Edad", ph: "24" },
                   { val: formSizes, set: setFormSizes, label: "Talla", ph: "S/M" },
+                  { val: formNationality, set: setFormNationality, label: "Nacionalidad", ph: "Chilena" },
                 ].map((s) => (
                   <div key={s.label}>
                     <label className="block mb-1" style={{ fontSize: 10, color: "#7878a0" }}>{s.label}</label>
@@ -1818,16 +1859,17 @@ export default function TioJohnny() {
               </ul>
             </div>
           )}
-          {(t.height || t.weight || t.eyes || t.hair || t.age || t.sizes) && (
+          {(t.height || t.weight || t.eyes || t.hair || t.age || t.sizes || t.nationality) && (
             <div className="mt-5">
               <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Medidas / Stats</h3>
               <div className="grid grid-cols-3 gap-3">
                 {[
+                  { label: "Nacionalidad", value: t.nationality },
+                  { label: "Edad", value: t.age },
                   { label: "Altura", value: t.height },
                   { label: "Peso", value: t.weight },
                   { label: "Ojos", value: t.eyes },
                   { label: "Cabello", value: t.hair },
-                  { label: "Edad", value: t.age },
                   { label: "Talla", value: t.sizes },
                 ].filter((s) => s.value).map((s) => (
                   <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
@@ -1950,7 +1992,21 @@ export default function TioJohnny() {
       </div>
 
       <div className="px-4 pb-2 flex items-center justify-between">
-        <p className="text-xs" style={{ color: "#6b6b90" }}>{filtered.length} modelo{filtered.length !== 1 ? "s" : ""}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs" style={{ color: "#6b6b90" }}>{filtered.length} modelo{filtered.length !== 1 ? "s" : ""}</p>
+          <button
+            onClick={() => setFiltersOpen((o) => !o)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+            style={{ background: hasActiveFilters ? "#8B5CF6" : filtersOpen ? "#2a2a4a" : "#1e1e3a", color: hasActiveFilters ? "#fff" : "#7878a0", border: hasActiveFilters ? "none" : "1px solid #2a2a4a" }}
+          >
+            <SlidersHorizontal size={11} /> Filtros{hasActiveFilters ? " ●" : ""}
+          </button>
+          {hasActiveFilters && (
+            <button onClick={clearAllFilters} className="text-xs px-2 py-0.5 rounded-full" style={{ color: "#f43f5e", background: "rgba(244,63,94,0.1)" }}>
+              Limpiar
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-1 rounded-full p-0.5" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
           <button
             onClick={() => { setViewMode("grid"); setSwipeIndex(0); }}
@@ -1968,6 +2024,46 @@ export default function TioJohnny() {
           </button>
         </div>
       </div>
+
+      {/* ═══ FILTER PANEL ═══ */}
+      {filtersOpen && (
+        <div className="px-4 pb-3" style={{ animation: "fadeSlideUp 0.2s ease both" }}>
+          <div className="rounded-2xl p-4 space-y-3" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
+            {/* Row 1: Nationality + Eyes + Hair */}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { val: filterNationality, set: setFilterNationality, label: "Nacionalidad", ph: "Chilena" },
+                { val: filterEyes, set: setFilterEyes, label: "Ojos", ph: "Café" },
+                { val: filterHair, set: setFilterHair, label: "Cabello", ph: "Castaño" },
+              ].map((f) => (
+                <div key={f.label}>
+                  <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0" }}>{f.label}</label>
+                  <input value={f.val} onChange={(e) => f.set(e.target.value)} placeholder={f.ph} className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} />
+                </div>
+              ))}
+            </div>
+            {/* Row 2: Age range + Height range */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0" }}>Edad</label>
+                <div className="flex items-center gap-1">
+                  <input value={filterAgeMin} onChange={(e) => setFilterAgeMin(e.target.value)} placeholder="18" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" />
+                  <span style={{ fontSize: 10, color: "#4a4a6a" }}>—</span>
+                  <input value={filterAgeMax} onChange={(e) => setFilterAgeMax(e.target.value)} placeholder="35" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" />
+                </div>
+              </div>
+              <div>
+                <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0" }}>Altura (m)</label>
+                <div className="flex items-center gap-1">
+                  <input value={filterHeightMin} onChange={(e) => setFilterHeightMin(e.target.value)} placeholder="1.55" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" step="0.01" />
+                  <span style={{ fontSize: 10, color: "#4a4a6a" }}>—</span>
+                  <input value={filterHeightMax} onChange={(e) => setFilterHeightMax(e.target.value)} placeholder="1.80" className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center" style={{ background: "#12122a", border: "1px solid #2a2a4a" }} type="number" step="0.01" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ GRID VIEW ═══ */}
       {viewMode === "grid" && (
