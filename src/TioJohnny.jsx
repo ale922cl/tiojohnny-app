@@ -266,6 +266,16 @@ const ANIM_CSS = `
 .grid-morph-out { animation: gridMorphOut 0.2s ease-in both; }
 .modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
+@keyframes profileBlurReveal {
+  0%   { filter: blur(12px) brightness(0.7); transform: scale(1.06); }
+  100% { filter: blur(0) brightness(1); transform: scale(1); }
+}
+.profile-blur-reveal { animation: profileBlurReveal 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+@keyframes profileCrossfade {
+  0%   { opacity: 0; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.profile-crossfade { animation: profileCrossfade 0.4s ease-out both; }
 .heart-pop   { animation: heartPop 0.4s cubic-bezier(0.22,1,0.36,1); }
 .pill-pop    { animation: pillPop 0.3s cubic-bezier(0.22,1,0.36,1); }
 .badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
@@ -320,6 +330,10 @@ export default function TioJohnny() {
   const [countersShown, setCountersShown] = useState(false);
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [carouselKey, setCarouselKey] = useState(0);
+  const [ambientColor, setAmbientColor] = useState("rgba(139,92,246,0.3)");
+  const profileScrollRef = useRef(null);
+  const profileHeroRef = useRef(null);
   const [favorites, setFavorites] = useState([]);
 
   // ─── Editor state ──────────────────────────────────────────────────────
@@ -1162,13 +1176,61 @@ export default function TioJohnny() {
     trackEvent("category_view", null, cat);
   }, []);
 
+  // ─── Ambient color extraction from image ──────────────────────────
+  const extractAmbientColor = useCallback((imgSrc) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = 50; canvas.height = 50;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, 50, 50);
+          const data = ctx.getImageData(0, 0, 50, 50).data;
+          let r = 0, g = 0, b = 0, count = 0;
+          for (let i = 0; i < data.length; i += 16) {
+            r += data[i]; g += data[i + 1]; b += data[i + 2]; count++;
+          }
+          r = Math.round(r / count); g = Math.round(g / count); b = Math.round(b / count);
+          // Boost saturation slightly for a more vivid glow
+          const max = Math.max(r, g, b), min = Math.min(r, g, b);
+          if (max - min > 20) {
+            setAmbientColor(`rgba(${r},${g},${b},0.45)`);
+          } else {
+            setAmbientColor("rgba(139,92,246,0.3)"); // fallback to violet
+          }
+        } catch (_) { setAmbientColor("rgba(139,92,246,0.3)"); }
+      };
+      img.onerror = () => setAmbientColor("rgba(139,92,246,0.3)");
+      img.src = imgSrc;
+    } catch (_) { setAmbientColor("rgba(139,92,246,0.3)"); }
+  }, []);
+
+  // ─── Parallax scroll handler for profile hero ────────────────────
+  const handleProfileScroll = useCallback(() => {
+    const scrollEl = profileScrollRef.current;
+    const heroEl = profileHeroRef.current;
+    if (!scrollEl || !heroEl) return;
+    const scrollY = scrollEl.scrollTop;
+    const img = heroEl.querySelector("img");
+    if (img) {
+      img.style.transform = `translateY(${scrollY * 0.35}px) scale(1.05)`;
+    }
+  }, []);
+
   // Open profile with URL update
   const openProfile = useCallback((t) => {
     setSelectedTalent(t);
     setCarouselIndex(0);
+    setCarouselKey((k) => k + 1);
+    setAmbientColor("rgba(139,92,246,0.3)");
+    // Extract ambient color from main photo
+    const mainImg = getMainPhoto(t);
+    if (mainImg) extractAmbientColor(mainImg);
     window.history.pushState(null, "", `#/modelo/${t.id}`);
     trackEvent("profile_view", t.id);
-  }, []);
+  }, [extractAmbientColor]);
 
   // Animated modal close
   const closeDetail = useCallback(() => {
@@ -2397,40 +2459,57 @@ export default function TioJohnny() {
     const imgCount = images.length;
     const experienceList = (t.experience || "").split("\n").filter(Boolean);
 
+    const goToPhoto = (newIndex) => {
+      setCarouselIndex(newIndex);
+      setCarouselKey((k) => k + 1);
+      if (images[newIndex]) extractAmbientColor(images[newIndex]);
+    };
+
     return (
       <div className={`fixed inset-0 z-50 flex flex-col ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "#12122a" }}>
-        <div className="relative w-full" style={{ height: "55vh", minHeight: 300 }}>
-          <img src={images[carouselIndex]} alt={t.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
-          <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 50%, #12122a 100%)" }} />
-          <div className="absolute top-4 right-4 flex gap-2">
-            <button onClick={(e) => handleShare(t, e)} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
-              {shareConfirm === t.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
-            </button>
-            <button onClick={closeDetail} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
-              <X size={22} color="#fff" />
-            </button>
-          </div>
-          <button onClick={(e) => toggleFav(t.id, e)} className={`absolute top-4 left-4 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`} style={{ background: "rgba(0,0,0,0.5)" }}>
-            <Heart size={22} color={favorites.includes(t.id) ? "#f43f5e" : "#fff"} fill={favorites.includes(t.id) ? "#f43f5e" : "none"} />
-          </button>
-          {imgCount > 1 && (
-            <>
-              <button onClick={() => setCarouselIndex((i) => (i - 1 + imgCount) % imgCount)} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.4)" }}>
-                <ChevronLeft size={20} color="#fff" />
-              </button>
-              <button onClick={() => setCarouselIndex((i) => (i + 1) % imgCount)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.4)" }}>
-                <ChevronRight size={20} color="#fff" />
-              </button>
-            </>
-          )}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-            {images.map((_, i) => (
-              <span key={i} className="block rounded-full transition-all" style={{ width: i === carouselIndex ? 24 : 8, height: 8, background: i === carouselIndex ? "#8B5CF6" : "rgba(255,255,255,0.4)" }} />
-            ))}
-          </div>
-        </div>
+        {/* ── Ambient color glow — radiates from behind the hero image ── */}
+        <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{ height: "65vh", background: `radial-gradient(ellipse at 50% 30%, ${ambientColor} 0%, transparent 70%)`, transition: "background 0.8s ease", zIndex: 0 }} />
 
-        <div className="flex-1 overflow-y-auto px-5 pb-32" style={{ color: "#e2e2f0" }}>
+        <div ref={profileScrollRef} className="flex-1 overflow-y-auto" onScroll={handleProfileScroll} style={{ position: "relative", zIndex: 1 }}>
+          {/* ── Hero image with parallax + blur reveal + crossfade ── */}
+          <div ref={profileHeroRef} className="relative w-full overflow-hidden" style={{ height: "55vh", minHeight: 300 }}>
+            <img
+              key={`hero-${carouselKey}`}
+              src={images[carouselIndex]}
+              alt={t.name}
+              className="w-full h-full object-cover profile-blur-reveal profile-crossfade"
+              style={{ objectPosition: "top", transform: "scale(1.05)" }}
+            />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, #12122a 100%)" }} />
+            <div className="absolute top-4 right-4 flex gap-2" style={{ zIndex: 5 }}>
+              <button onClick={(e) => handleShare(t, e)} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+                {shareConfirm === t.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
+              </button>
+              <button onClick={closeDetail} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
+                <X size={22} color="#fff" />
+              </button>
+            </div>
+            <button onClick={(e) => toggleFav(t.id, e)} className={`absolute top-4 left-4 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`} style={{ background: "rgba(0,0,0,0.5)", zIndex: 5 }}>
+              <Heart size={22} color={favorites.includes(t.id) ? "#f43f5e" : "#fff"} fill={favorites.includes(t.id) ? "#f43f5e" : "none"} />
+            </button>
+            {imgCount > 1 && (
+              <>
+                <button onClick={() => goToPhoto((carouselIndex - 1 + imgCount) % imgCount)} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.4)", zIndex: 5 }}>
+                  <ChevronLeft size={20} color="#fff" />
+                </button>
+                <button onClick={() => goToPhoto((carouselIndex + 1) % imgCount)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full" style={{ background: "rgba(0,0,0,0.4)", zIndex: 5 }}>
+                  <ChevronRight size={20} color="#fff" />
+                </button>
+              </>
+            )}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2" style={{ zIndex: 5 }}>
+              {images.map((_, i) => (
+                <button key={i} onClick={() => i !== carouselIndex && goToPhoto(i)} className="block rounded-full transition-all" style={{ width: i === carouselIndex ? 24 : 8, height: 8, background: i === carouselIndex ? "#8B5CF6" : "rgba(255,255,255,0.4)", border: "none", cursor: "pointer" }} />
+              ))}
+            </div>
+          </div>
+
+          <div className="px-5 pb-32" style={{ color: "#e2e2f0" }}>
           <div className="mt-2">
             <h2 className="text-2xl font-bold text-white">{t.name}</h2>
             <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{t.specialty} &middot; {formatRate(t.rate)}</p>
@@ -2484,8 +2563,9 @@ export default function TioJohnny() {
             </div>
           )}
         </div>
+        </div>{/* end scroll container */}
 
-        <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-4" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
+        <div className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-10 flex items-center justify-center gap-4" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)", zIndex: 10 }}>
           {/* WhatsApp */}
           <a href={`https://wa.me/${(t.phone || "").replace("+", "")}?text=${encodeURIComponent("Hola, te vi en TioJohnny.cl y me gustaría saber más de ti")}`} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("contact_whatsapp", t.id)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
             <div className="w-13 h-13 rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#25D366" }}>
