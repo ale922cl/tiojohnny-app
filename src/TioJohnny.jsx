@@ -331,33 +331,6 @@ export default function TioJohnny() {
   // Inject CSS animations once
   useEffect(() => { injectAnimStyles(); }, []);
 
-  // ─── Parallax scroll effect for grid cards ────────────────────────────
-  const gridRef = useRef(null);
-  useEffect(() => {
-    if (view !== "public" || viewMode !== "grid") return;
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        const cards = gridRef.current?.querySelectorAll("[data-parallax]");
-        if (!cards) { ticking = false; return; }
-        const vh = window.innerHeight;
-        cards.forEach((card) => {
-          const rect = card.getBoundingClientRect();
-          const center = rect.top + rect.height / 2;
-          const offset = ((center - vh / 2) / vh) * -18; // shift photo ±18px
-          const img = card.querySelector("img");
-          if (img) img.style.objectPosition = `center calc(30% + ${offset}px)`;
-        });
-        ticking = false;
-      });
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [view, viewMode, filtered.length]);
-
   // ─── Animated entrance counters ───────────────────────────────────────
   const counterAnimRan = useRef(false);
   useEffect(() => {
@@ -2253,7 +2226,7 @@ export default function TioJohnny() {
       {/* ═══ GRID VIEW ═══ */}
       {viewMode === "grid" && (
         <>
-          <div ref={gridRef} className="grid grid-cols-2 gap-3 px-3 pb-8">
+          <div className="grid grid-cols-2 gap-3 px-3 pb-8">
             {filtered.map((t, idx) => {
               const isFav = favorites.includes(t.id);
               const lp = makeLongPress(t);
@@ -2264,7 +2237,7 @@ export default function TioJohnny() {
                   className="card-enter rounded-2xl overflow-hidden cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s`, WebkitUserSelect: "none", userSelect: "none" }}
                 >
-                  <div data-parallax className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
+                  <div className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${8 + (idx % 4) * 2}s ease-in-out infinite alternate`, willChange: "transform" }} loading="lazy" />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     <button
