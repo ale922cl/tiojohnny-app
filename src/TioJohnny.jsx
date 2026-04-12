@@ -420,46 +420,54 @@ export default function TioJohnny() {
 
   // ─── Fetch exchange rates ─────────────────────────────────────────
   useEffect(() => {
-    // Simple fallback rates if API fails
+    // Simple fallback rates — used if API fails or is unreachable
     const fallback = { CLP: 1, USD: 0.00106, EUR: 0.00098 };
-    fetch("https://api.exchangerate-host.com/latest?base=CLP&symbols=USD,EUR")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d && d.rates) {
-          setExchangeRates({ CLP: 1, USD: d.rates.USD || fallback.USD, EUR: d.rates.EUR || fallback.EUR });
-        } else {
-          setExchangeRates(fallback);
-        }
-      })
-      .catch(() => setExchangeRates(fallback));
+    try {
+      fetch("https://open.er-api.com/v6/latest/CLP")
+        .then((r) => { if (!r.ok) throw new Error("bad"); return r.json(); })
+        .then((d) => {
+          if (d && d.rates) {
+            setExchangeRates({ CLP: 1, USD: d.rates.USD || fallback.USD, EUR: d.rates.EUR || fallback.EUR });
+          } else {
+            setExchangeRates(fallback);
+          }
+        })
+        .catch(() => setExchangeRates(fallback));
+    } catch (_) {
+      setExchangeRates(fallback);
+    }
   }, []);
 
   // ─── Currency formatter ───────────────────────────────────────────
   const formatRate = useCallback((rateStr) => {
-    if (!rateStr || currency === "CLP") return rateStr;
-    // Try to parse CLP amount from string like "$80.000 / hr" or "80000"
-    const cleaned = rateStr.replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".");
-    const num = parseFloat(cleaned);
-    if (isNaN(num)) return rateStr;
-    const converted = num * exchangeRates[currency];
-    const suffix = rateStr.includes("/") ? " / " + rateStr.split("/").pop().trim() : "";
-    if (currency === "USD") return `$${Math.round(converted).toLocaleString("en-US")} USD${suffix}`;
-    if (currency === "EUR") return `€${Math.round(converted).toLocaleString("de-DE")}${suffix}`;
-    return rateStr;
+    try {
+      if (!rateStr || currency === "CLP") return rateStr || "";
+      const cleaned = String(rateStr).replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".");
+      const num = parseFloat(cleaned);
+      if (isNaN(num)) return rateStr;
+      const converted = num * (exchangeRates[currency] || 1);
+      const suffix = rateStr.includes("/") ? " / " + rateStr.split("/").pop().trim() : "";
+      if (currency === "USD") return "$" + Math.round(converted) + " USD" + suffix;
+      if (currency === "EUR") return "€" + Math.round(converted) + suffix;
+      return rateStr;
+    } catch (_) { return rateStr || ""; }
   }, [currency, exchangeRates]);
 
-  // ─── Magnetic tilt for grid cards ─────────────────────────────────
+  // ─── Magnetic tilt for grid cards (desktop only — skip on touch) ──
   const handleCardPointerMove = useCallback((e) => {
+    if (e.pointerType === "touch") return; // skip on mobile — avoid jank
     const card = e.currentTarget;
+    if (!card) return;
     const rect = card.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5; // -0.5 to 0.5
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
     const y = (e.clientY - rect.top) / rect.height - 0.5;
     card.style.transform = `perspective(600px) rotateY(${x * 8}deg) rotateX(${-y * 8}deg) scale(1.03)`;
     card.style.transition = "transform 0.1s ease-out";
   }, []);
   const handleCardPointerLeave = useCallback((e) => {
     const card = e.currentTarget;
-    card.style.transform = "perspective(600px) rotateY(0deg) rotateX(0deg) scale(1)";
+    if (!card) return;
+    card.style.transform = "";
     card.style.transition = "transform 0.4s cubic-bezier(0.22,1,0.36,1)";
   }, []);
 
@@ -2450,7 +2458,7 @@ export default function TioJohnny() {
                   onPointerUp={lp.onPointerUp}
                   onPointerCancel={lp.onPointerCancel}
                   onPointerMove={handleCardPointerMove}
-                  onPointerLeave={(e) => { lp.onPointerLeave(); handleCardPointerLeave(e); }}
+                  onPointerLeave={(e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
                   className="grid-morph-in rounded-2xl cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", ...(isHeartbeat ? { boxShadow: "0 0 20px 8px rgba(244,63,94,0.45)", outline: "2px solid rgba(244,63,94,0.7)", transition: "box-shadow 0.4s ease, outline 0.4s ease" } : { transition: "box-shadow 0.4s ease, outline 0.4s ease" }) }}
                 >
