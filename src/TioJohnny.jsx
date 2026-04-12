@@ -206,6 +206,10 @@ const ANIM_CSS = `
   0%   { opacity: 0; transform: scale(0.85); }
   100% { opacity: 1; transform: scale(1); }
 }
+@keyframes counterSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
@@ -260,6 +264,8 @@ export default function TioJohnny() {
   const filterDropRef = useRef(null);
   const [selectedTalent, setSelectedTalent] = useState(null);
   const [spotlightTalent, setSpotlightTalent] = useState(null);
+  const [countersShown, setCountersShown] = useState(false);
+  const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [favorites, setFavorites] = useState([]);
 
@@ -324,6 +330,62 @@ export default function TioJohnny() {
 
   // Inject CSS animations once
   useEffect(() => { injectAnimStyles(); }, []);
+
+  // ─── Parallax scroll effect for grid cards ────────────────────────────
+  const gridRef = useRef(null);
+  useEffect(() => {
+    if (view !== "public" || viewMode !== "grid") return;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const cards = gridRef.current?.querySelectorAll("[data-parallax]");
+        if (!cards) { ticking = false; return; }
+        const vh = window.innerHeight;
+        cards.forEach((card) => {
+          const rect = card.getBoundingClientRect();
+          const center = rect.top + rect.height / 2;
+          const offset = ((center - vh / 2) / vh) * -18; // shift photo ±18px
+          const img = card.querySelector("img");
+          if (img) img.style.objectPosition = `center calc(30% + ${offset}px)`;
+        });
+        ticking = false;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [view, viewMode, filtered.length]);
+
+  // ─── Animated entrance counters ───────────────────────────────────────
+  const counterAnimRan = useRef(false);
+  useEffect(() => {
+    if (counterAnimRan.current || talents.length === 0) return;
+    counterAnimRan.current = true;
+    const activeTalents = talents.filter((t) => !t.archived);
+    const totalModels = activeTalents.length;
+    const totalCats = [...new Set(activeTalents.flatMap((t) => Array.isArray(t.category) ? t.category : [t.category]).filter(Boolean))].length;
+    const totalComunas = [...new Set(activeTalents.map((t) => t.location).filter(Boolean))].length;
+    setCountersShown(true);
+    const duration = 1200;
+    const steps = 30;
+    const interval = duration / steps;
+    let step = 0;
+    const timer = setInterval(() => {
+      step++;
+      const progress = Math.min(step / steps, 1);
+      const ease = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      setCounterVals({
+        models: Math.round(totalModels * ease),
+        cats: Math.round(totalCats * ease),
+        comunas: Math.round(totalComunas * ease),
+      });
+      if (step >= steps) clearInterval(timer);
+    }, interval);
+    // Auto-hide after 4 seconds
+    setTimeout(() => setCountersShown(false), 4000);
+  }, [talents]);
 
   // ─── Load data from Supabase on mount ───────────────────────────────
   useEffect(() => {
@@ -2008,6 +2070,22 @@ export default function TioJohnny() {
         )}
       </header>
 
+      {/* ── Animated entrance counters ── */}
+      {countersShown && (
+        <div className="flex items-center justify-center gap-6 px-4 py-2.5" style={{ background: "rgba(139,92,246,0.06)", borderBottom: "1px solid rgba(139,92,246,0.1)", animation: "counterSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both" }}>
+          {[
+            { value: counterVals.models, label: "modelos" },
+            { value: counterVals.cats, label: "categorías" },
+            { value: counterVals.comunas, label: "comunas" },
+          ].map((c) => (
+            <div key={c.label} className="text-center">
+              <span className="text-base font-bold" style={{ color: "#8B5CF6", fontFamily: "'Sora', sans-serif" }}>{c.value}</span>
+              <span className="text-xs ml-1" style={{ color: "#6b6b90" }}>{c.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {session && view === "public" && (
         <div className="flex items-center justify-between px-4 py-2" style={{ background: "rgba(139,92,246,0.1)", borderBottom: "1px solid rgba(139,92,246,0.3)" }}>
           <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Admin activo</span>
@@ -2175,7 +2253,7 @@ export default function TioJohnny() {
       {/* ═══ GRID VIEW ═══ */}
       {viewMode === "grid" && (
         <>
-          <div className="grid grid-cols-2 gap-3 px-3 pb-8">
+          <div ref={gridRef} className="grid grid-cols-2 gap-3 px-3 pb-8">
             {filtered.map((t, idx) => {
               const isFav = favorites.includes(t.id);
               const lp = makeLongPress(t);
@@ -2186,7 +2264,7 @@ export default function TioJohnny() {
                   className="card-enter rounded-2xl overflow-hidden cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s`, WebkitUserSelect: "none", userSelect: "none" }}
                 >
-                  <div className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
+                  <div data-parallax className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${8 + (idx % 4) * 2}s ease-in-out infinite alternate`, willChange: "transform" }} loading="lazy" />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     <button
