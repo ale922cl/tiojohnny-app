@@ -1410,142 +1410,137 @@ export default function TioJohnny() {
     }
   }, []);
 
-  // ─── Comp Card PDF Generator ─────────────────────────────────────
+  // ─── Tarjeta Pro PDF Generator ──────────────────────────────────
   const [compCardLoading, setCompCardLoading] = useState(false);
   const generateCompCard = useCallback(async (t) => {
     setCompCardLoading(true);
     try {
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [90, 140] });
-      const W = 90, H = 140;
+      // Standard business card: 90mm × 55mm landscape
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: [55, 90] });
+      const W = 90, H = 55;
 
-      // Background
-      doc.setFillColor(18, 18, 42);
+      // ── Elegant dark background with subtle gradient feel ──
+      doc.setFillColor(15, 15, 35);
       doc.rect(0, 0, W, H, "F");
 
-      // Load main photo
+      // Accent stripe — thin violet line at top
+      doc.setFillColor(139, 92, 246);
+      doc.rect(0, 0, W, 1.2, "F");
+
+      // ── Left side: Photo (cropped square) ──
+      const photoW = 22, photoH = 28;
+      const photoX = 4, photoY = 5;
       const mainImg = getMainPhoto(t);
       try {
         const imgResp = await fetch(mainImg);
         const blob = await imgResp.blob();
         const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
-        // Main photo — top portion
-        doc.addImage(dataUrl, "JPEG", 3, 3, 50, 66, undefined, "MEDIUM");
-      } catch (_) {
-        // If image fails, draw placeholder
+        // Rounded-corner photo area with background
         doc.setFillColor(30, 30, 58);
-        doc.rect(3, 3, 50, 66, "F");
-        doc.setTextColor(120, 120, 160);
-        doc.setFontSize(8);
-        doc.text("Foto", 28, 36, { align: "center" });
+        doc.roundedRect(photoX - 0.5, photoY - 0.5, photoW + 1, photoH + 1, 1.5, 1.5, "F");
+        doc.addImage(dataUrl, "JPEG", photoX, photoY, photoW, photoH, undefined, "MEDIUM");
+      } catch (_) {
+        doc.setFillColor(30, 30, 58);
+        doc.roundedRect(photoX - 0.5, photoY - 0.5, photoW + 1, photoH + 1, 1.5, 1.5, "F");
+        doc.setTextColor(100, 100, 140);
+        doc.setFontSize(7);
+        doc.text("Foto", photoX + photoW / 2, photoY + photoH / 2, { align: "center" });
       }
 
-      // Branding top-right
-      doc.setTextColor(139, 92, 246);
-      doc.setFontSize(7);
-      doc.text("TioJohnny.cl", W - 4, 8, { align: "right" });
+      // ── Right side: Name & info ──
+      const infoX = 30;
 
-      // Name
+      // Name — large, white, bold feel
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(11);
-      doc.text(t.name || "", 56, 12);
+      doc.setFont("helvetica", "bold");
+      const nameText = t.name || "Modelo";
+      doc.text(nameText, infoX, 7.5);
 
-      // Specialty
+      // Specialty — violet accent
       doc.setTextColor(139, 92, 246);
-      doc.setFontSize(7);
-      doc.text(t.specialty || "", 56, 17);
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "normal");
+      doc.text(t.specialty || "Modelo / Actriz", infoX, 11.5);
 
-      // Location
-      doc.setTextColor(152, 152, 176);
-      doc.setFontSize(6);
-      if (t.location) doc.text(t.location, 56, 22);
+      // Thin divider
+      doc.setDrawColor(60, 60, 100);
+      doc.setLineWidth(0.2);
+      doc.line(infoX, 13.5, W - 4, 13.5);
 
-      // Stats
-      const stats = [
-        t.nationality && ["Nacionalidad", t.nationality],
-        t.age && ["Edad", t.age],
-        t.height && ["Altura", t.height],
-        t.weight && ["Peso", t.weight],
-        t.eyes && ["Ojos", t.eyes],
-        t.hair && ["Cabello", t.hair],
-        t.sizes && ["Talla", t.sizes],
+      // Key stats — compact two-column layout
+      const statsData = [
+        t.location && ["\u{1F4CD}", t.location],
+        t.nationality && ["\u{1F30E}", t.nationality],
+        t.height && ["\u{1F4CF}", t.height],
+        t.age && ["\u{1F382}", t.age + " años"],
       ].filter(Boolean);
 
-      let sy = 28;
       doc.setFontSize(5.5);
-      stats.forEach(([label, val]) => {
+      let statY = 16.5;
+      statsData.forEach(([icon, val]) => {
         doc.setTextColor(120, 120, 160);
-        doc.text(label, 56, sy);
-        doc.setTextColor(255, 255, 255);
-        doc.text(String(val), 76, sy);
-        sy += 4.5;
+        doc.text(icon, infoX, statY);
+        doc.setTextColor(210, 210, 230);
+        doc.text(String(val), infoX + 5, statY);
+        statY += 3.8;
       });
 
-      // Rate
-      if (t.rate) {
-        sy += 2;
-        doc.setTextColor(139, 92, 246);
-        doc.setFontSize(7);
-        doc.text(t.rate, 56, sy);
-      }
-
-      // Divider line
-      doc.setDrawColor(139, 92, 246);
-      doc.setLineWidth(0.3);
-      doc.line(3, 72, W - 3, 72);
-
-      // About (truncated)
-      if (t.about) {
-        doc.setTextColor(196, 196, 216);
-        doc.setFontSize(5.5);
-        const aboutLines = doc.splitTextToSize(t.about, W - 8);
-        doc.text(aboutLines.slice(0, 4), 4, 76);
-      }
-
-      // Services
-      const services = (t.experience || "").split("\n").filter(Boolean);
-      if (services.length > 0) {
-        const servY = t.about ? 92 : 76;
-        doc.setTextColor(139, 92, 246);
-        doc.setFontSize(5);
-        doc.text("SERVICIOS", 4, servY);
-        doc.setTextColor(196, 196, 216);
-        doc.setFontSize(5.5);
-        services.slice(0, 4).forEach((s, i) => {
-          doc.text("• " + s, 4, servY + 4 + i * 3.5);
-        });
-      }
-
-      // QR Code — bottom right
-      const profileUrl = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
-      try {
-        const qrDataUrl = await QRCode.toDataURL(profileUrl, { width: 200, margin: 1, color: { dark: "#8B5CF6", light: "#12122a" } });
-        doc.addImage(qrDataUrl, "PNG", W - 25, H - 25, 22, 22);
-      } catch (_) {}
-
-      // Contact info bottom-left
-      doc.setFontSize(5.5);
-      let cy = H - 22;
+      // ── Bottom section ──
+      // Contact info — bottom left under photo
+      doc.setFontSize(5);
+      let contactY = 37;
       if (t.phone) {
-        doc.setTextColor(152, 152, 176);
-        doc.text("Tel:", 4, cy);
-        doc.setTextColor(255, 255, 255);
-        doc.text(t.phone, 14, cy);
-        cy += 4;
+        doc.setTextColor(139, 92, 246);
+        doc.text("\u260E", 4, contactY);
+        doc.setTextColor(200, 200, 220);
+        doc.text(t.phone, 8, contactY);
+        contactY += 3.5;
       }
       if (t.instagram) {
         doc.setTextColor(225, 48, 108);
-        doc.text(t.instagram, 4, cy);
-        cy += 4;
+        doc.text("@", 4, contactY);
+        doc.setTextColor(200, 200, 220);
+        doc.text(t.instagram.replace("@", ""), 8, contactY);
+        contactY += 3.5;
       }
 
-      // Footer
-      doc.setTextColor(74, 74, 106);
-      doc.setFontSize(4.5);
-      doc.text("Escanea el QR para ver el perfil completo", 4, H - 4);
+      // Rate — if available
+      if (t.rate) {
+        doc.setTextColor(139, 92, 246);
+        doc.setFontSize(5.5);
+        doc.setFont("helvetica", "bold");
+        doc.text(t.rate, 4, contactY + 1);
+        doc.setFont("helvetica", "normal");
+      }
+
+      // ── QR Code — bottom right corner ──
+      const profileUrl = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
+      const qrSize = 16;
+      const qrX = W - qrSize - 3, qrY = H - qrSize - 6;
+      try {
+        const qrDataUrl = await QRCode.toDataURL(profileUrl, { width: 200, margin: 1, color: { dark: "#8B5CF6", light: "#0f0f23" } });
+        // QR background pad
+        doc.setFillColor(20, 20, 45);
+        doc.roundedRect(qrX - 1, qrY - 1, qrSize + 2, qrSize + 2, 1, 1, "F");
+        doc.addImage(qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize);
+      } catch (_) {}
+
+      // "Ver perfil" label under QR
+      doc.setTextColor(100, 100, 140);
+      doc.setFontSize(3.5);
+      doc.text("Ver perfil", qrX + qrSize / 2, qrY + qrSize + 2.5, { align: "center" });
+
+      // ── Branding — bottom accent bar + logo ──
+      doc.setFillColor(139, 92, 246);
+      doc.rect(0, H - 1.2, W, 1.2, "F");
+      doc.setTextColor(100, 100, 140);
+      doc.setFontSize(3.8);
+      doc.text("TioJohnny.cl", W / 2, H - 2, { align: "center" });
 
       // Save
-      doc.save(`${(t.name || "modelo").replace(/\s+/g, "_")}_CompCard.pdf`);
-      trackEvent("comp_card_download", t.id);
+      doc.save(`${(t.name || "modelo").replace(/\s+/g, "_")}_TarjetaPro.pdf`);
+      trackEvent("tarjeta_pro_download", t.id);
     } catch (err) {
       console.error("Comp card error:", err);
     }
@@ -2514,12 +2509,12 @@ export default function TioJohnny() {
               <span className="text-xs font-semibold" style={{ color: "#E1306C" }}>Instagram</span>
             </a>
           )}
-          {/* Comp Card */}
+          {/* Tarjeta Pro */}
           <button onClick={() => generateCompCard(t)} disabled={compCardLoading} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
             <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#1e1e3a", border: "2px solid #8B5CF6" }}>
               {compCardLoading ? <Loader2 size={18} color="#8B5CF6" className="animate-spin" /> : <Download size={18} color="#8B5CF6" />}
             </div>
-            <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Comp Card</span>
+            <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Tarjeta Pro</span>
           </button>
           {/* Share */}
           <button onClick={(e) => handleShare(t, e)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
