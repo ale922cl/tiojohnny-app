@@ -1092,7 +1092,7 @@ export default function TioJohnny() {
   const didLongPressRef = useRef(false);
   const makeLongPress = (t) => ({
     onPointerDown: () => { didLongPressRef.current = false; longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400); },
-    onPointerUp: (e) => { clearTimeout(longPressTimerRef.current); if (!didLongPressRef.current && !e.target.closest("button")) openProfile(t); },
+    onPointerUp: () => { clearTimeout(longPressTimerRef.current); if (!didLongPressRef.current) openProfile(t); },
     onPointerLeave: () => { clearTimeout(longPressTimerRef.current); },
     onPointerCancel: () => { clearTimeout(longPressTimerRef.current); },
   });
@@ -2446,9 +2446,11 @@ export default function TioJohnny() {
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
-                  {...lp}
+                  onPointerDown={lp.onPointerDown}
+                  onPointerUp={lp.onPointerUp}
+                  onPointerCancel={lp.onPointerCancel}
                   onPointerMove={handleCardPointerMove}
-                  onPointerLeave={handleCardPointerLeave}
+                  onPointerLeave={(e) => { lp.onPointerLeave(); handleCardPointerLeave(e); }}
                   className={`grid-morph-in rounded-2xl overflow-hidden cursor-pointer ${isHeartbeat ? "heartbeat-fav" : ""}`}
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform" }}
                 >
@@ -2457,6 +2459,8 @@ export default function TioJohnny() {
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     <button
                       onClick={(e) => toggleFav(t.id, e)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onPointerUp={(e) => e.stopPropagation()}
                       className={`absolute top-2 right-2 p-2 rounded-full ${heartPopId === t.id ? "heart-pop" : ""}`}
                       style={{ background: "rgba(0,0,0,0.35)", transition: "transform 0.2s ease" }}
                     >
