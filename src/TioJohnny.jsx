@@ -2,9 +2,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import { jsPDF } from "jspdf";
+import QRCode from "qrcode";
 
 
 
@@ -571,6 +573,28 @@ export default function TioJohnny() {
     if (searchOpen && searchRef.current) searchRef.current.focus();
   }, [searchOpen]);
 
+  // Fuzzy search suggestions
+  const searchSuggestions = searchQuery.length >= 1 ? (() => {
+    const q = searchQuery.toLowerCase();
+    const activeTalents = talents.filter((t) => !t.archived);
+    const matches = [];
+    activeTalents.forEach((t) => {
+      // Score: name match is highest, then specialty, location, etc.
+      const name = (t.name || "").toLowerCase();
+      const spec = (t.specialty || "").toLowerCase();
+      const loc = (t.location || "").toLowerCase();
+      const nat = (t.nationality || "").toLowerCase();
+      if (name.startsWith(q)) matches.push({ t, score: 100, matchField: "nombre" });
+      else if (name.includes(q)) matches.push({ t, score: 80, matchField: "nombre" });
+      else if (spec.includes(q)) matches.push({ t, score: 60, matchField: "especialidad" });
+      else if (loc.includes(q)) matches.push({ t, score: 40, matchField: "ubicación" });
+      else if (nat.includes(q)) matches.push({ t, score: 30, matchField: "nacionalidad" });
+      else if ((t.hair || "").toLowerCase().includes(q)) matches.push({ t, score: 20, matchField: "cabello" });
+      else if ((t.eyes || "").toLowerCase().includes(q)) matches.push({ t, score: 20, matchField: "ojos" });
+    });
+    return matches.sort((a, b) => b.score - a.score).slice(0, 6);
+  })() : [];
+
   // Close category dropdown on outside click
   useEffect(() => {
     if (!catDropdownOpen) return;
@@ -681,7 +705,8 @@ export default function TioJohnny() {
     if (t.archived) return false;
     const talentCats = getTalentCategories(t);
     const matchCat = activeCategory === "Todas" || (activeCategory === "Favoritas" ? favorites.includes(t.id) : talentCats.includes(activeCategory));
-    const matchSearch = !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.specialty || "").toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchSearch = !q || t.name.toLowerCase().includes(q) || (t.specialty || "").toLowerCase().includes(q) || (t.location || "").toLowerCase().includes(q) || (t.nationality || "").toLowerCase().includes(q) || (t.hair || "").toLowerCase().includes(q) || (t.eyes || "").toLowerCase().includes(q);
     if (!matchCat || !matchSearch) return false;
     // Advanced filters (multi-select: match any selected)
     if (filterNationality.length && !filterNationality.some((v) => (t.nationality || "").toLowerCase() === v.toLowerCase())) return false;
@@ -1383,6 +1408,148 @@ export default function TioJohnny() {
         } catch (_) {}
       }
     }
+  }, []);
+
+  // ─── Comp Card PDF Generator ─────────────────────────────────────
+  const [compCardLoading, setCompCardLoading] = useState(false);
+  const generateCompCard = useCallback(async (t) => {
+    setCompCardLoading(true);
+    try {
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [90, 140] });
+      const W = 90, H = 140;
+
+      // Background
+      doc.setFillColor(18, 18, 42);
+      doc.rect(0, 0, W, H, "F");
+
+      // Load main photo
+      const mainImg = getMainPhoto(t);
+      try {
+        const imgResp = await fetch(mainImg);
+        const blob = await imgResp.blob();
+        const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
+        // Main photo — top portion
+        doc.addImage(dataUrl, "JPEG", 3, 3, 50, 66, undefined, "MEDIUM");
+      } catch (_) {
+        // If image fails, draw placeholder
+        doc.setFillColor(30, 30, 58);
+        doc.rect(3, 3, 50, 66, "F");
+        doc.setTextColor(120, 120, 160);
+        doc.setFontSize(8);
+        doc.text("Foto", 28, 36, { align: "center" });
+      }
+
+      // Branding top-right
+      doc.setTextColor(139, 92, 246);
+      doc.setFontSize(7);
+      doc.text("TioJohnny.cl", W - 4, 8, { align: "right" });
+
+      // Name
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.text(t.name || "", 56, 12);
+
+      // Specialty
+      doc.setTextColor(139, 92, 246);
+      doc.setFontSize(7);
+      doc.text(t.specialty || "", 56, 17);
+
+      // Location
+      doc.setTextColor(152, 152, 176);
+      doc.setFontSize(6);
+      if (t.location) doc.text(t.location, 56, 22);
+
+      // Stats
+      const stats = [
+        t.nationality && ["Nacionalidad", t.nationality],
+        t.age && ["Edad", t.age],
+        t.height && ["Altura", t.height],
+        t.weight && ["Peso", t.weight],
+        t.eyes && ["Ojos", t.eyes],
+        t.hair && ["Cabello", t.hair],
+        t.sizes && ["Talla", t.sizes],
+      ].filter(Boolean);
+
+      let sy = 28;
+      doc.setFontSize(5.5);
+      stats.forEach(([label, val]) => {
+        doc.setTextColor(120, 120, 160);
+        doc.text(label, 56, sy);
+        doc.setTextColor(255, 255, 255);
+        doc.text(String(val), 76, sy);
+        sy += 4.5;
+      });
+
+      // Rate
+      if (t.rate) {
+        sy += 2;
+        doc.setTextColor(139, 92, 246);
+        doc.setFontSize(7);
+        doc.text(t.rate, 56, sy);
+      }
+
+      // Divider line
+      doc.setDrawColor(139, 92, 246);
+      doc.setLineWidth(0.3);
+      doc.line(3, 72, W - 3, 72);
+
+      // About (truncated)
+      if (t.about) {
+        doc.setTextColor(196, 196, 216);
+        doc.setFontSize(5.5);
+        const aboutLines = doc.splitTextToSize(t.about, W - 8);
+        doc.text(aboutLines.slice(0, 4), 4, 76);
+      }
+
+      // Services
+      const services = (t.experience || "").split("\n").filter(Boolean);
+      if (services.length > 0) {
+        const servY = t.about ? 92 : 76;
+        doc.setTextColor(139, 92, 246);
+        doc.setFontSize(5);
+        doc.text("SERVICIOS", 4, servY);
+        doc.setTextColor(196, 196, 216);
+        doc.setFontSize(5.5);
+        services.slice(0, 4).forEach((s, i) => {
+          doc.text("• " + s, 4, servY + 4 + i * 3.5);
+        });
+      }
+
+      // QR Code — bottom right
+      const profileUrl = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
+      try {
+        const qrDataUrl = await QRCode.toDataURL(profileUrl, { width: 200, margin: 1, color: { dark: "#8B5CF6", light: "#12122a" } });
+        doc.addImage(qrDataUrl, "PNG", W - 25, H - 25, 22, 22);
+      } catch (_) {}
+
+      // Contact info bottom-left
+      doc.setFontSize(5.5);
+      let cy = H - 22;
+      if (t.phone) {
+        doc.setTextColor(152, 152, 176);
+        doc.text("Tel:", 4, cy);
+        doc.setTextColor(255, 255, 255);
+        doc.text(t.phone, 14, cy);
+        cy += 4;
+      }
+      if (t.instagram) {
+        doc.setTextColor(225, 48, 108);
+        doc.text(t.instagram, 4, cy);
+        cy += 4;
+      }
+
+      // Footer
+      doc.setTextColor(74, 74, 106);
+      doc.setFontSize(4.5);
+      doc.text("Escanea el QR para ver el perfil completo", 4, H - 4);
+
+      // Save
+      doc.save(`${(t.name || "modelo").replace(/\s+/g, "_")}_CompCard.pdf`);
+      trackEvent("comp_card_download", t.id);
+    } catch (err) {
+      console.error("Comp card error:", err);
+    }
+    setCompCardLoading(false);
   }, []);
 
   // ─── Drag-to-reorder photos ───────────────────────────────────────
@@ -2347,6 +2514,13 @@ export default function TioJohnny() {
               <span className="text-xs font-semibold" style={{ color: "#E1306C" }}>Instagram</span>
             </a>
           )}
+          {/* Comp Card */}
+          <button onClick={() => generateCompCard(t)} disabled={compCardLoading} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#1e1e3a", border: "2px solid #8B5CF6" }}>
+              {compCardLoading ? <Loader2 size={18} color="#8B5CF6" className="animate-spin" /> : <Download size={18} color="#8B5CF6" />}
+            </div>
+            <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Comp Card</span>
+          </button>
           {/* Share */}
           <button onClick={(e) => handleShare(t, e)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
             <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: shareConfirm === t.id ? "#22c55e" : "#2a2a4a", transition: "background 0.3s ease" }}>
@@ -2368,12 +2542,34 @@ export default function TioJohnny() {
     <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
       <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3" style={{ background: "rgba(18,18,42,0.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
         {searchOpen ? (
-          <div className="flex items-center gap-2 w-full">
+          <div className="flex items-center gap-2 w-full relative">
             <Search size={18} style={{ color: "#8B5CF6" }} />
-            <input ref={searchRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar modelo..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-gray-500" />
+            <input ref={searchRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar por nombre, ubicación, especialidad..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-gray-500" />
             <button onClick={() => { setSearchOpen(false); setSearchQuery(""); }}>
               <X size={18} color="#888" />
             </button>
+            {/* Autocomplete dropdown */}
+            {searchSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", zIndex: 60, boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}>
+                {searchSuggestions.map(({ t, matchField }) => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setSearchQuery(""); setSearchOpen(false); openProfile(t); }}
+                    className="w-full px-3 py-2.5 flex items-center gap-3 text-left"
+                    style={{ borderBottom: "1px solid #2a2a4a" }}
+                  >
+                    <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0">
+                      <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{t.name}</p>
+                      <p className="text-xs truncate" style={{ color: "#7878a0" }}>{t.specialty} · {t.location}</p>
+                    </div>
+                    <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: "#12122a", color: "#8B5CF6", fontSize: 9 }}>{matchField}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <>
