@@ -186,6 +186,26 @@ const ANIM_CSS = `
   100% { opacity: 0; transform: translate(0, 20px); }
 }
 .swipe-tutorial-hand { animation: swipeTutorialHand 2.5s cubic-bezier(0.4,0,0.2,1) forwards; }
+@keyframes kenBurns1 {
+  0%   { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(1.12) translate(-2%, -1%); }
+}
+@keyframes kenBurns2 {
+  0%   { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(1.1) translate(1%, -2%); }
+}
+@keyframes kenBurns3 {
+  0%   { transform: scale(1.05) translate(-1%, 0); }
+  100% { transform: scale(1.15) translate(1%, -1%); }
+}
+@keyframes spotlightIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes spotlightImgIn {
+  0%   { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
 .card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-enter { animation: modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 .modal-exit  { animation: modalSlideDown 0.25s cubic-bezier(0.55,0,1,0.45) both; }
@@ -239,6 +259,7 @@ export default function TioJohnny() {
   const [filterHeightMax, setFilterHeightMax] = useState("");     // dropdown
   const filterDropRef = useRef(null);
   const [selectedTalent, setSelectedTalent] = useState(null);
+  const [spotlightTalent, setSpotlightTalent] = useState(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [favorites, setFavorites] = useState([]);
 
@@ -2147,15 +2168,23 @@ export default function TioJohnny() {
           <div className="grid grid-cols-2 gap-3 px-3 pb-8">
             {filtered.map((t, idx) => {
               const isFav = favorites.includes(t.id);
+              let longPressTimer = null;
+              let didLongPress = false;
+              const onPointerDown = () => { didLongPress = false; longPressTimer = setTimeout(() => { didLongPress = true; setSpotlightTalent(t); }, 400); };
+              const onPointerUp = () => { clearTimeout(longPressTimer); if (!didLongPress) openProfile(t); };
+              const onPointerCancel = () => { clearTimeout(longPressTimer); };
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
-                  onClick={() => openProfile(t)}
+                  onPointerDown={onPointerDown}
+                  onPointerUp={onPointerUp}
+                  onPointerLeave={onPointerCancel}
+                  onPointerCancel={onPointerCancel}
                   className="card-enter rounded-2xl overflow-hidden cursor-pointer"
-                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s` }}
+                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s`, WebkitUserSelect: "none", userSelect: "none" }}
                 >
-                  <div className="relative" style={{ paddingBottom: "130%" }}>
-                    <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top" }} loading="lazy" />
+                  <div className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
+                    <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${8 + (idx % 4) * 2}s ease-in-out infinite alternate`, willChange: "transform" }} loading="lazy" />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     <button
                       onClick={(e) => toggleFav(t.id, e)}
@@ -2344,6 +2373,48 @@ export default function TioJohnny() {
       )}
 
       {renderDetail()}
+
+      {/* ── Spotlight / Dark Room Mode ── */}
+      {spotlightTalent && (() => {
+        const st = spotlightTalent;
+        const imgs = (st.photos && st.photos.length > 0) ? st.photos : [getMainPhoto(st)];
+        return (
+          <div
+            className="fixed inset-0 z-[9998] flex flex-col items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.95)", animation: "spotlightIn 0.3s ease both", cursor: "pointer" }}
+            onClick={() => setSpotlightTalent(null)}
+          >
+            {/* Ambient glow behind photo */}
+            <div className="absolute" style={{ width: "70vw", height: "70vw", maxWidth: 400, maxHeight: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)", filter: "blur(40px)", top: "50%", left: "50%", transform: "translate(-50%, -55%)" }} />
+            {/* Photo */}
+            <div className="relative" style={{ width: "75vw", maxWidth: 380, animation: "spotlightImgIn 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s both" }}>
+              <div className="rounded-3xl overflow-hidden" style={{ aspectRatio: "3/4", boxShadow: "0 0 80px rgba(139,92,246,0.2), 0 20px 60px rgba(0,0,0,0.5)" }}>
+                <img src={getMainPhoto(st)} alt={st.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+              </div>
+            </div>
+            {/* Name + info */}
+            <div className="mt-6 text-center" style={{ animation: "spotlightImgIn 0.4s ease 0.2s both" }}>
+              <h2 className="text-2xl font-bold text-white">{st.name}</h2>
+              <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{st.specialty}</p>
+              <p className="text-xs mt-1" style={{ color: "#6b6b90" }}>{st.location}</p>
+            </div>
+            {/* Actions */}
+            <div className="flex items-center gap-4 mt-5" style={{ animation: "spotlightImgIn 0.4s ease 0.3s both" }}>
+              <button onClick={(e) => { e.stopPropagation(); toggleFav(st.id, e); }} className="p-3 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+                <Heart size={22} color={favorites.includes(st.id) ? "#f43f5e" : "#fff"} fill={favorites.includes(st.id) ? "#f43f5e" : "none"} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); setSpotlightTalent(null); openProfile(st); }} className="px-5 py-2.5 rounded-full text-sm font-semibold" style={{ background: "#8B5CF6", color: "#fff" }}>
+                Ver perfil
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); handleShare(st, e); }} className="p-3 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+                {shareConfirm === st.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
+              </button>
+            </div>
+            {/* Hint */}
+            <p className="mt-6 text-xs" style={{ color: "#4a4a6a" }}>Toca para cerrar</p>
+          </div>
+        );
+      })()}
 
       {/* ── Floating Hearts Overlay ── */}
       {floatingHearts.length > 0 && (
