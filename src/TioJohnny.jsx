@@ -2052,8 +2052,8 @@ export default function TioJohnny() {
 
       {/* ═══ FILTER PANEL ═══ */}
       {filtersOpen && (
-        <div className="px-4 pb-3" style={{ animation: "fadeSlideUp 0.2s ease both" }}>
-          <div className="rounded-2xl p-4 space-y-4" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
+        <div className="px-4 pb-3 relative" style={{ animation: "fadeSlideUp 0.2s ease both", zIndex: 20 }}>
+          <div className="rounded-2xl p-4 space-y-4" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", overflow: "visible" }}>
             {/* Domicilio toggle */}
             <button
               onClick={() => setFilterDomicilio((v) => !v)}
