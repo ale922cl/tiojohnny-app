@@ -227,6 +227,7 @@ export default function TioJohnny() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterDropOpen, setFilterDropOpen] = useState(null); // which filter dropdown is open: "nationality" | "eyes" | "hair" | null
   const [filterNationality, setFilterNationality] = useState([]); // multi-select
   const [filterEyes, setFilterEyes] = useState([]);               // multi-select
   const [filterHair, setFilterHair] = useState([]);               // multi-select
@@ -234,6 +235,7 @@ export default function TioJohnny() {
   const [filterAgeMax, setFilterAgeMax] = useState("");           // dropdown
   const [filterHeightMin, setFilterHeightMin] = useState("");     // dropdown
   const [filterHeightMax, setFilterHeightMax] = useState("");     // dropdown
+  const filterDropRef = useRef(null);
   const [selectedTalent, setSelectedTalent] = useState(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [favorites, setFavorites] = useState([]);
@@ -460,6 +462,14 @@ export default function TioJohnny() {
 
   const hasActiveFilters = !!(filterNationality.length || filterAgeMin || filterAgeMax || filterHeightMin || filterHeightMax || filterEyes.length || filterHair.length);
   const clearAllFilters = () => { setFilterNationality([]); setFilterAgeMin(""); setFilterAgeMax(""); setFilterHeightMin(""); setFilterHeightMax(""); setFilterEyes([]); setFilterHair([]); };
+
+  // Close filter dropdowns on outside click
+  useEffect(() => {
+    if (!filterDropOpen) return;
+    const handler = (e) => { if (filterDropRef.current && !filterDropRef.current.contains(e.target)) setFilterDropOpen(null); };
+    document.addEventListener("mousedown", handler); document.addEventListener("touchstart", handler);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
+  }, [filterDropOpen]);
   const toggleFilter = (arr, setArr, val) => setArr((prev) => prev.includes(val) ? prev.filter((v) => v !== val) : [...prev, val]);
 
   // Parse numeric value from a string like "1.75m", "175cm", "24 años", "58kg"
@@ -2039,61 +2049,77 @@ export default function TioJohnny() {
       {filtersOpen && (
         <div className="px-4 pb-3" style={{ animation: "fadeSlideUp 0.2s ease both" }}>
           <div className="rounded-2xl p-4 space-y-4" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
-            {/* Multi-select pill sections */}
-            {[
-              { label: "Nacionalidad", options: filterOptions.nationality, selected: filterNationality, setSelected: setFilterNationality },
-              { label: "Ojos", options: filterOptions.eyes, selected: filterEyes, setSelected: setFilterEyes },
-              { label: "Cabello", options: filterOptions.hair, selected: filterHair, setSelected: setFilterHair },
-            ].map((section) => section.options.length > 0 && (
-              <div key={section.label}>
-                <label className="block mb-2" style={{ fontSize: 10, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{section.label}</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {section.options.map((opt) => {
-                    const active = section.selected.includes(opt);
-                    return (
-                      <button key={opt} onClick={() => toggleFilter(section.selected, section.setSelected, opt)}
-                        className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                        style={{ background: active ? "#8B5CF6" : "#12122a", color: active ? "#fff" : "#9898b0", border: active ? "1px solid #8B5CF6" : "1px solid #2a2a4a" }}
-                      >{opt}</button>
-                    );
-                  })}
+            {/* Multi-select dropdowns */}
+            <div className="grid grid-cols-3 gap-2" ref={filterDropRef}>
+              {[
+                { key: "nationality", label: "Nacionalidad", options: filterOptions.nationality, selected: filterNationality, setSelected: setFilterNationality },
+                { key: "eyes", label: "Ojos", options: filterOptions.eyes, selected: filterEyes, setSelected: setFilterEyes },
+                { key: "hair", label: "Cabello", options: filterOptions.hair, selected: filterHair, setSelected: setFilterHair },
+              ].map((section) => {
+                if (section.options.length === 0) return null;
+                const count = section.selected.length;
+                const isOpen = filterDropOpen === section.key;
+                return (
+                  <div key={section.key} className="relative">
+                    <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{section.label}</label>
+                    <button onClick={() => setFilterDropOpen(isOpen ? null : section.key)} className="w-full px-2 py-2 rounded-lg text-xs text-left flex items-center justify-between gap-1" style={{ background: "#12122a", border: count > 0 ? "1px solid #8B5CF6" : "1px solid #2a2a4a", color: count > 0 ? "#fff" : "#7878a0" }}>
+                      <span className="truncate">{count > 0 ? `${count} sel.` : "Todas"}</span>
+                      <ChevronDown size={11} style={{ flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                    </button>
+                    {isOpen && (
+                      <div className="absolute left-0 right-0 mt-1 rounded-xl overflow-y-auto" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", zIndex: 50, maxHeight: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                        {section.options.map((opt) => {
+                          const active = section.selected.includes(opt);
+                          return (
+                            <button key={opt} onClick={() => toggleFilter(section.selected, section.setSelected, opt)} className="w-full px-3 py-2.5 text-xs text-left flex items-center gap-2" style={{ color: active ? "#fff" : "#9898b0", background: active ? "rgba(139,92,246,0.12)" : "transparent" }}>
+                              <div className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center" style={{ border: active ? "none" : "1.5px solid #4a4a6a", background: active ? "#8B5CF6" : "transparent" }}>
+                                {active && <Check size={10} color="#fff" />}
+                              </div>
+                              {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Age + Height range dropdowns */}
+            <div className="grid grid-cols-2 gap-3">
+              {allAges.length > 0 && (
+                <div>
+                  <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Edad</label>
+                  <div className="flex items-center gap-1">
+                    <select value={filterAgeMin} onChange={(e) => setFilterAgeMin(e.target.value)} className="flex-1 px-1 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                      <option value="">Mín</option>
+                      {allAges.map((a) => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                    <span style={{ fontSize: 10, color: "#4a4a6a" }}>—</span>
+                    <select value={filterAgeMax} onChange={(e) => setFilterAgeMax(e.target.value)} className="flex-1 px-1 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                      <option value="">Máx</option>
+                      {allAges.map((a) => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {/* Age range dropdowns */}
-            {allAges.length > 0 && (
-              <div>
-                <label className="block mb-2" style={{ fontSize: 10, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Edad</label>
-                <div className="flex items-center gap-2">
-                  <select value={filterAgeMin} onChange={(e) => setFilterAgeMin(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
-                    <option value="">Mín</option>
-                    {allAges.map((a) => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                  <span style={{ fontSize: 11, color: "#4a4a6a" }}>—</span>
-                  <select value={filterAgeMax} onChange={(e) => setFilterAgeMax(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
-                    <option value="">Máx</option>
-                    {allAges.map((a) => <option key={a} value={a}>{a}</option>)}
-                  </select>
+              )}
+              {allHeights.length > 0 && (
+                <div>
+                  <label className="block mb-1" style={{ fontSize: 9, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Altura</label>
+                  <div className="flex items-center gap-1">
+                    <select value={filterHeightMin} onChange={(e) => setFilterHeightMin(e.target.value)} className="flex-1 px-1 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                      <option value="">Mín</option>
+                      {allHeights.map((h) => <option key={h} value={h}>{h.toFixed(2)}m</option>)}
+                    </select>
+                    <span style={{ fontSize: 10, color: "#4a4a6a" }}>—</span>
+                    <select value={filterHeightMax} onChange={(e) => setFilterHeightMax(e.target.value)} className="flex-1 px-1 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+                      <option value="">Máx</option>
+                      {allHeights.map((h) => <option key={h} value={h}>{h.toFixed(2)}m</option>)}
+                    </select>
+                  </div>
                 </div>
-              </div>
-            )}
-            {/* Height range dropdowns */}
-            {allHeights.length > 0 && (
-              <div>
-                <label className="block mb-2" style={{ fontSize: 10, color: "#7878a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Altura</label>
-                <div className="flex items-center gap-2">
-                  <select value={filterHeightMin} onChange={(e) => setFilterHeightMin(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
-                    <option value="">Mín</option>
-                    {allHeights.map((h) => <option key={h} value={h}>{h.toFixed(2)}m</option>)}
-                  </select>
-                  <span style={{ fontSize: 11, color: "#4a4a6a" }}>—</span>
-                  <select value={filterHeightMax} onChange={(e) => setFilterHeightMax(e.target.value)} className="flex-1 px-2 py-2 rounded-lg text-xs text-white outline-none text-center appearance-none" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
-                    <option value="">Máx</option>
-                    {allHeights.map((h) => <option key={h} value={h}>{h.toFixed(2)}m</option>)}
-                  </select>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
