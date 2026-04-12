@@ -916,6 +916,16 @@ export default function TioJohnny() {
   const lastPosRef = useRef({ x: 0, time: 0 });
   const dragXRef = useRef(0); // live drag x, NOT in state
   const swipingLockRef = useRef(false); // prevents double-fire of doSwipe
+
+  // Long-press detection for spotlight mode
+  const longPressTimerRef = useRef(null);
+  const didLongPressRef = useRef(false);
+  const makeLongPress = (t) => ({
+    onPointerDown: () => { didLongPressRef.current = false; longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400); },
+    onPointerUp: () => { clearTimeout(longPressTimerRef.current); if (!didLongPressRef.current) openProfile(t); },
+    onPointerLeave: () => { clearTimeout(longPressTimerRef.current); },
+    onPointerCancel: () => { clearTimeout(longPressTimerRef.current); },
+  });
   const swipeCardRef = useRef(null);
   const swipeBackRef = useRef(null);
   const swipeThirdRef = useRef(null);
@@ -2168,18 +2178,11 @@ export default function TioJohnny() {
           <div className="grid grid-cols-2 gap-3 px-3 pb-8">
             {filtered.map((t, idx) => {
               const isFav = favorites.includes(t.id);
-              let longPressTimer = null;
-              let didLongPress = false;
-              const onPointerDown = () => { didLongPress = false; longPressTimer = setTimeout(() => { didLongPress = true; setSpotlightTalent(t); }, 400); };
-              const onPointerUp = () => { clearTimeout(longPressTimer); if (!didLongPress) openProfile(t); };
-              const onPointerCancel = () => { clearTimeout(longPressTimer); };
+              const lp = makeLongPress(t);
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
-                  onPointerDown={onPointerDown}
-                  onPointerUp={onPointerUp}
-                  onPointerLeave={onPointerCancel}
-                  onPointerCancel={onPointerCancel}
+                  {...lp}
                   className="card-enter rounded-2xl overflow-hidden cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.06}s`, WebkitUserSelect: "none", userSelect: "none" }}
                 >
