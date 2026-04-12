@@ -175,7 +175,7 @@ const ANIM_CSS = `
   from { opacity: 0; transform: scale(0.92) translateY(12px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
-.card-stack-in { animation: cardStackIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+.card-stack-in { animation-name: cardStackIn; animation-duration: 0.35s; animation-timing-function: cubic-bezier(0.22,1,0.36,1); animation-fill-mode: none; }
 @keyframes swipeTutorialHand {
   0%   { opacity: 0; transform: translate(0, 20px); }
   15%  { opacity: 1; transform: translate(0, 0); }
@@ -1130,6 +1130,18 @@ export default function TioJohnny() {
   const undoSwipe = () => {
     if (swipeIndex > 0) setSwipeIndex((i) => i - 1);
   };
+
+  // Animate new card entrance via ref, then remove class so it doesn't block inline transforms
+  useEffect(() => {
+    const card = swipeCardRef.current;
+    if (!card) return;
+    card.classList.add("card-stack-in");
+    const onEnd = () => { card.classList.remove("card-stack-in"); card.style.transform = ""; card.style.opacity = ""; };
+    card.addEventListener("animationend", onEnd, { once: true });
+    // Safety fallback in case animationend doesn't fire
+    const timer = setTimeout(onEnd, 400);
+    return () => { clearTimeout(timer); card.removeEventListener("animationend", onEnd); };
+  }, [swipeIndex]);
 
   // ─── Share handler ──────────────────────────────────────────────────
   const [shareConfirm, setShareConfirm] = useState(null); // talent id that just got "copied" feedback
@@ -2301,7 +2313,7 @@ export default function TioJohnny() {
                 {/* Active card (top) — driven by refs, not state */}
                 <div
                   ref={swipeCardRef}
-                  className="absolute inset-0 rounded-3xl overflow-hidden cursor-grab card-stack-in"
+                  className="absolute inset-0 rounded-3xl overflow-hidden cursor-grab"
                   style={{
                     boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
                     userSelect: "none",
