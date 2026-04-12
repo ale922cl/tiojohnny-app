@@ -213,11 +213,11 @@ const ANIM_CSS = `
 }
 .card-enter { animation: fadeSlideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
 @keyframes heartbeatGlow {
-  0%   { box-shadow: 0 0 0 0 rgba(244,63,94,0.4); }
-  50%  { box-shadow: 0 0 14px 4px rgba(244,63,94,0.25); }
-  100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); }
+  0%   { box-shadow: 0 0 0 0 rgba(244,63,94,0); outline: 2px solid rgba(244,63,94,0); }
+  50%  { box-shadow: 0 0 20px 8px rgba(244,63,94,0.45); outline: 2px solid rgba(244,63,94,0.7); }
+  100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); outline: 2px solid rgba(244,63,94,0); }
 }
-.heartbeat-fav { animation: heartbeatGlow 1.2s ease-in-out 3; }
+.heartbeat-fav { animation: heartbeatGlow 0.8s ease-in-out 3; outline-offset: 0px; }
 @keyframes splashLogo {
   0%   { opacity: 0; transform: scale(0.7); filter: blur(8px); }
   40%  { opacity: 1; transform: scale(1.05); filter: blur(0); }
@@ -2451,10 +2451,10 @@ export default function TioJohnny() {
                   onPointerCancel={lp.onPointerCancel}
                   onPointerMove={handleCardPointerMove}
                   onPointerLeave={(e) => { lp.onPointerLeave(); handleCardPointerLeave(e); }}
-                  className={`grid-morph-in rounded-2xl overflow-hidden cursor-pointer ${isHeartbeat ? "heartbeat-fav" : ""}`}
+                  className={`grid-morph-in rounded-2xl cursor-pointer ${isHeartbeat ? "heartbeat-fav" : ""}`}
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform" }}
                 >
-                  <div className="relative" style={{ paddingBottom: "130%", overflow: "hidden" }}>
+                  <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${8 + (idx % 4) * 2}s ease-in-out infinite alternate`, willChange: "transform" }} loading="lazy" />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     <button
