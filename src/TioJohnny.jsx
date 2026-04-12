@@ -2451,8 +2451,8 @@ export default function TioJohnny() {
                   onPointerCancel={lp.onPointerCancel}
                   onPointerMove={handleCardPointerMove}
                   onPointerLeave={(e) => { lp.onPointerLeave(); handleCardPointerLeave(e); }}
-                  className={`grid-morph-in rounded-2xl cursor-pointer ${isHeartbeat ? "heartbeat-fav" : ""}`}
-                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform" }}
+                  className="grid-morph-in rounded-2xl cursor-pointer"
+                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", ...(isHeartbeat ? { boxShadow: "0 0 20px 8px rgba(244,63,94,0.45)", outline: "2px solid rgba(244,63,94,0.7)", transition: "box-shadow 0.4s ease, outline 0.4s ease" } : { transition: "box-shadow 0.4s ease, outline 0.4s ease" }) }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${8 + (idx % 4) * 2}s ease-in-out infinite alternate`, willChange: "transform" }} loading="lazy" />
