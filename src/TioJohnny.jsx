@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download, Image as ImageIcon,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
@@ -335,6 +335,8 @@ export default function TioJohnny() {
   const [spotlightTalent, setSpotlightTalent] = useState(null);
   const [countersShown, setCountersShown] = useState(false);
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
+  const [castMode, setCastMode] = useState(false);
+  const [castSelected, setCastSelected] = useState(new Set());
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselKey, setCarouselKey] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -385,6 +387,8 @@ export default function TioJohnny() {
   const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "analytics"
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [trendingData, setTrendingData] = useState({}); // { talentId: viewCount (last 7 days) }
+  const [shareCardTalent, setShareCardTalent] = useState(null);
 
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
@@ -455,6 +459,22 @@ export default function TioJohnny() {
     }, interval);
     // Auto-hide after 4 seconds
     setTimeout(() => setCountersShown(false), 4000);
+  }, [talents]);
+
+  // ─── Fetch trending data ──────────────────────────────────────────
+  useEffect(() => {
+    if (!talents.length) return;
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    supabase.from("analytics_events")
+      .select("talent_id")
+      .eq("event_type", "profile_view")
+      .gte("created_at", weekAgo)
+      .then(({ data }) => {
+        if (!data) return;
+        const counts = {};
+        data.forEach((e) => { if (e.talent_id) counts[e.talent_id] = (counts[e.talent_id] || 0) + 1; });
+        setTrendingData(counts);
+      });
   }, [talents]);
 
   // ─── Splash timer ──────────────────────────────────────────────────
@@ -539,17 +559,19 @@ export default function TioJohnny() {
 
   useEffect(() => {
     const openFromHash = () => {
-      const hash = window.location.hash; // e.g. #/modelo/5
-      const match = hash.match(/^#\/modelo\/(\d+)$/);
-      if (match) {
-        const id = parseInt(match[1]);
-        const t = talentsRef.current.find((x) => x.id === id);
-        if (t && !t.archived) {
-          setSelectedTalent(t);
-          setCarouselIndex(0);
-          setView("public");
-        }
-      } else {
+      const hash = window.location.hash;
+      const idMatch = hash.match(/^#\/modelo\/(\d+)$/);
+      const slugMatch = !idMatch && hash.match(/^#\/([a-z0-9-]+)$/);
+      const found = idMatch
+        ? talentsRef.current.find((x) => x.id === parseInt(idMatch[1]))
+        : slugMatch
+          ? talentsRef.current.find((x) => toSlug(x.name) === slugMatch[1])
+          : null;
+      if (found && !found.archived) {
+        setSelectedTalent(found);
+        setCarouselIndex(0);
+        setView("public");
+      } else if (!idMatch && !slugMatch) {
         setSelectedTalent(null);
       }
     };
@@ -599,6 +621,16 @@ export default function TioJohnny() {
   useEffect(() => {
     if (searchOpen && searchRef.current) searchRef.current.focus();
   }, [searchOpen]);
+
+  // ─── Slug helper ──────────────────────────────────────────────────
+  const toSlug = (name) => name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  // ─── Cast mode toggle ─────────────────────────────────────────────
+  const toggleCast = (id) => setCastSelected((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   // Fuzzy search suggestions
   const searchSuggestions = searchQuery.length >= 1 ? (() => {
@@ -730,6 +762,47 @@ export default function TioJohnny() {
     hair: uniqueVals("hair"),
     location: uniqueVals("location"),
   };
+  // ─── Smart search (NLP filter parsing) ───────────────────────────
+  const parseSmartSearch = useCallback((query) => {
+    const q = query.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const hairMap = { rubia: "Rubio", rubio: "Rubio", morocha: "Castaño", morena: "Moreno", moreno: "Moreno", castana: "Castaño", castaño: "Castaño", pelirroja: "Rojo", peliroja: "Rojo", negra: "Negro", negro: "Negro" };
+    const eyeMap = { cafe: "Café", marron: "Café", verde: "Verde", azul: "Azul", miel: "Miel", negros: "Negro", oscuros: "Negro" };
+    const isAlta = /\b(alta|altas|alto)\b/.test(q);
+    const isBaja = /\b(baja|bajas|bajo)\b/.test(q);
+    let detectedHair = null, detectedEyes = null, detectedLocation = null;
+    for (const [keyword, value] of Object.entries(hairMap)) {
+      if (q.includes(keyword) && filterOptions.hair.some(h => h.toLowerCase() === value.toLowerCase())) {
+        detectedHair = filterOptions.hair.find(h => h.toLowerCase() === value.toLowerCase());
+        break;
+      }
+    }
+    for (const [keyword, value] of Object.entries(eyeMap)) {
+      if (q.includes(keyword) && filterOptions.eyes.some(e => e.toLowerCase() === value.toLowerCase())) {
+        detectedEyes = filterOptions.eyes.find(e => e.toLowerCase() === value.toLowerCase());
+        break;
+      }
+    }
+    for (const loc of filterOptions.location) {
+      const locSlug = loc.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      if (q.includes(locSlug)) { detectedLocation = loc; break; }
+    }
+    let heightMin = null, heightMax = null;
+    if (isAlta) heightMin = "1.70";
+    if (isBaja) heightMax = "1.65";
+    return { detectedHair, detectedEyes, detectedLocation, heightMin, heightMax };
+  }, [filterOptions]);
+
+  // Auto-apply smart filters when query looks like natural language
+  useEffect(() => {
+    if (searchQuery.trim().split(/\s+/).length < 2) return;
+    const { detectedHair, detectedEyes, detectedLocation, heightMin, heightMax } = parseSmartSearch(searchQuery);
+    if (detectedHair) setFilterHair([detectedHair]);
+    if (detectedEyes) setFilterEyes([detectedEyes]);
+    if (detectedLocation) setFilterLocation([detectedLocation]);
+    if (heightMin) setFilterHeightMin(heightMin);
+    if (heightMax) setFilterHeightMax(heightMax);
+  }, [searchQuery]);
+
   // Collect unique ages and heights for range dropdowns
   const allAges = [...new Set(allNonArchived.map((t) => parseNum(t.age)).filter((a) => a !== null && a > 0))].sort((a, b) => a - b);
   const allHeights = [...new Set(allNonArchived.map((t) => { let h = parseNum(t.height); if (h && h > 100) h = h / 100; return h; }).filter((h) => h !== null && h > 0))].sort((a, b) => a - b);
@@ -1302,7 +1375,7 @@ export default function TioJohnny() {
     // Extract ambient color from main photo
     const mainImg = getMainPhoto(t);
     if (mainImg) extractAmbientColor(mainImg);
-    window.history.pushState(null, "", `#/modelo/${t.id}`);
+    window.history.pushState(null, "", `#/${toSlug(t.name)}`);
     trackEvent("profile_view", t.id);
   }, [extractAmbientColor]);
 
@@ -1520,7 +1593,7 @@ export default function TioJohnny() {
   const handleShare = useCallback(async (t, e) => {
     if (e) e.stopPropagation();
     trackEvent("share", t.id);
-    const url = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
+    const url = `${window.location.origin}${window.location.pathname}#/${toSlug(t.name)}`;
     const shareData = {
       title: `${t.name} — TioJohnny.cl`,
       text: `${t.name} · ${t.specialty}`,
@@ -1651,7 +1724,7 @@ export default function TioJohnny() {
       }
 
       // ── QR Code — bottom right corner ──
-      const profileUrl = `${window.location.origin}${window.location.pathname}#/modelo/${t.id}`;
+      const profileUrl = `${window.location.origin}${window.location.pathname}#/${toSlug(t.name)}`;
       const qrSize = 16;
       const qrX = W - qrSize - 3, qrY = H - qrSize - 6;
       try {
@@ -1682,6 +1755,86 @@ export default function TioJohnny() {
     }
     setCompCardLoading(false);
   }, []);
+
+  // ─── Share Card (poster image download) ─────────────────────────
+  const generateShareCard = useCallback(async (t) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 600;
+    canvas.height = 900;
+    const ctx = canvas.getContext("2d");
+
+    // Background
+    ctx.fillStyle = "#12122a";
+    ctx.fillRect(0, 0, 600, 900);
+
+    // Try to load photo
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = getMainPhoto(t); });
+      const aspect = img.naturalWidth / img.naturalHeight;
+      const drawH = 700;
+      const drawW = drawH * aspect;
+      const offsetX = (600 - drawW) / 2;
+      ctx.drawImage(img, offsetX, 0, drawW, drawH);
+    } catch (_) {}
+
+    ctx.fillStyle = "#12122a";
+    ctx.fillRect(0, 600, 600, 300);
+    ctx.fillStyle = "rgba(18,18,42,0.85)";
+    ctx.fillRect(0, 400, 600, 200);
+
+    // Gradient
+    const g2 = ctx.createLinearGradient(0, 400, 0, 700);
+    g2.addColorStop(0, "transparent");
+    g2.addColorStop(1, "rgba(18,18,42,0.95)");
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 400, 600, 300);
+
+    // Name
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 44px Arial";
+    ctx.fillText(t.name, 40, 680);
+
+    // Specialty + rate
+    ctx.fillStyle = "#8B5CF6";
+    ctx.font = "24px Arial";
+    ctx.fillText(`${t.specialty || ""}  ·  ${formatRate(t.rate)}`, 40, 720);
+
+    // Location
+    if (t.location) {
+      ctx.fillStyle = "#9898b0";
+      ctx.font = "20px Arial";
+      ctx.fillText(`📍 ${t.location}`, 40, 758);
+    }
+
+    // Divider
+    ctx.strokeStyle = "rgba(139,92,246,0.3)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(40, 780); ctx.lineTo(560, 780); ctx.stroke();
+
+    // TioJohnny branding
+    ctx.fillStyle = "#8B5CF6";
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Tio", 40, 820);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("Johnny", 40 + ctx.measureText("Tio").width, 820);
+    ctx.fillStyle = "#4a4a6a";
+    ctx.font = "18px Arial";
+    ctx.fillText(".cl", 40 + ctx.measureText("TioJohnny").width + 2, 820);
+
+    // Profile URL
+    const slug = toSlug(t.name);
+    ctx.fillStyle = "#4a4a6a";
+    ctx.font = "16px Arial";
+    ctx.fillText(`tiojohnny.cl/#/${slug}`, 40, 855);
+
+    // Download
+    const link = document.createElement("a");
+    link.download = `${slug}-tiojohnny.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }, [formatRate, getMainPhoto]);
 
   // ─── Drag-to-reorder photos ───────────────────────────────────────
   const [dragIdx, setDragIdx] = useState(null);
@@ -2706,6 +2859,13 @@ export default function TioJohnny() {
               <span className="text-xs font-semibold" style={{ color: "#E1306C" }}>Instagram</span>
             </a>
           )}
+          {/* Tarjeta (share card image) */}
+          <button onClick={() => generateShareCard(t)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
+            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#1e1e3a", border: "2px solid #ec4899" }}>
+              <ImageIcon size={18} color="#ec4899" />
+            </div>
+            <span className="text-xs font-semibold" style={{ color: "#ec4899" }}>Tarjeta</span>
+          </button>
           {/* Tarjeta Pro */}
           <button onClick={() => generateCompCard(t)} disabled={compCardLoading} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
             <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#1e1e3a", border: "2px solid #8B5CF6" }}>
@@ -2818,6 +2978,9 @@ export default function TioJohnny() {
           <div className="flex items-center gap-2 w-full relative">
             <Search size={18} style={{ color: "#8B5CF6" }} />
             <input ref={searchRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar por nombre, ubicación, especialidad..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-gray-500" />
+            {searchQuery.length > 1 && hasActiveFilters && (
+              <span className="text-xs px-2 py-0.5 rounded-full ml-1 flex-shrink-0" style={{ background: "rgba(139,92,246,0.2)", color: "#8B5CF6", whiteSpace: "nowrap" }}>✨ Filtros auto</span>
+            )}
             <button onClick={() => { setSearchOpen(false); setSearchQuery(""); }}>
               <X size={18} color="#888" />
             </button>
@@ -2931,6 +3094,13 @@ export default function TioJohnny() {
               Limpiar
             </button>
           )}
+          <button
+            onClick={() => { setCastMode(v => !v); setCastSelected(new Set()); }}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+            style={{ background: castMode ? "#8B5CF6" : "#1e1e3a", color: castMode ? "#fff" : "#7878a0", border: castMode ? "none" : "1px solid #2a2a4a" }}
+          >
+            <Users size={11} /> Cast
+          </button>
           <div className="flex items-center gap-1">
             {["CLP", "USD", "EUR"].map((c) => (
               <button
@@ -3061,6 +3231,11 @@ export default function TioJohnny() {
               const isFav = favorites.includes(t.id);
               const isHeartbeat = heartbeatIds.includes(t.id);
               const lp = makeLongPress(t);
+              const trendViews = trendingData[t.id] || 0;
+              const allCounts = Object.values(trendingData);
+              const maxTrend = allCounts.length ? Math.max(...allCounts) : 1;
+              const trendRank = allCounts.filter(c => c > trendViews).length;
+              const isTrending = trendViews >= 3 && trendRank < Math.ceil(allCounts.length * 0.2);
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
@@ -3069,12 +3244,18 @@ export default function TioJohnny() {
                   onPointerCancel={lp.onPointerCancel}
                   onPointerMove={handleCardPointerMove}
                   onPointerLeave={(e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
+                  onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
                   className="grid-morph-in rounded-2xl cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", ...(isHeartbeat ? { boxShadow: "0 0 20px 8px rgba(244,63,94,0.45)", outline: "2px solid rgba(244,63,94,0.7)", transition: "box-shadow 0.4s ease, outline 0.4s ease" } : { transition: "box-shadow 0.4s ease, outline 0.4s ease" }) }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
+                    {castMode && (
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ background: castSelected.has(t.id) ? "rgba(139,92,246,0.5)" : "transparent", transition: "background 0.15s", zIndex: 3 }}>
+                        {castSelected.has(t.id) && <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "#8B5CF6" }}><Check size={22} color="#fff" /></div>}
+                      </div>
+                    )}
                     <button
                       onClick={(e) => toggleFav(t.id, e)}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -3085,6 +3266,11 @@ export default function TioJohnny() {
                       <Heart size={16} color={isFav ? "#f43f5e" : "#fff"} fill={isFav ? "#f43f5e" : "none"} />
                     </button>
                     <div className="absolute bottom-0 left-0 right-0 p-3">
+                      {isTrending && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full mb-1" style={{ background: "rgba(251,146,60,0.2)", border: "1px solid rgba(251,146,60,0.4)" }}>
+                          <span style={{ fontSize: 9, color: "#fb923c" }}>🔥 {trendViews} vistas esta semana</span>
+                        </div>
+                      )}
                       <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
                       <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
                       <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{formatRate(t.rate)}</p>
@@ -3319,6 +3505,25 @@ export default function TioJohnny() {
             </h1>
             <p className="text-sm mt-2 font-medium" style={{ color: "#6b6b90" }}>Talento Chileno</p>
           </div>
+        </div>
+      )}
+
+      {/* ── Quick Cast floating bar ── */}
+      {castMode && castSelected.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-6 pt-3" style={{ background: "linear-gradient(to top, #12122a 60%, transparent)" }}>
+          <button
+            className="w-full py-4 rounded-2xl font-bold text-white text-sm flex items-center justify-center gap-2"
+            style={{ background: "linear-gradient(135deg, #8B5CF6, #ec4899)" }}
+            onClick={() => {
+              const selected = talents.filter(t => castSelected.has(t.id));
+              const origin = window.location.origin + window.location.pathname;
+              const lines = selected.map(t => `• ${t.name} — ${formatRate(t.rate)}\n  ${origin}#/${toSlug(t.name)}`).join("\n\n");
+              const msg = `Hola! Te comparto esta selección de talentos de TioJohnny.cl:\n\n${lines}`;
+              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+            }}
+          >
+            <Share2 size={18} /> Enviar {castSelected.size} perfil{castSelected.size !== 1 ? "es" : ""} por WhatsApp
+          </button>
         </div>
       )}
 
