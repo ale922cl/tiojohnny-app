@@ -331,10 +331,16 @@ export default function TioJohnny() {
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselKey, setCarouselKey] = useState(0);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const [ambientColor, setAmbientColor] = useState("rgba(139,92,246,0.3)");
   const profileScrollRef = useRef(null);
   const profileHeroRef = useRef(null);
-  const [favorites, setFavorites] = useState([]);
+  const [favorites, setFavorites] = useState(() => {
+    try {
+      const match = document.cookie.match(/tj_favs=([^;]+)/);
+      return match ? JSON.parse(decodeURIComponent(match[1])) : [];
+    } catch (_) { return []; }
+  });
 
   // ─── Editor state ──────────────────────────────────────────────────────
   const [editorId, setEditorId] = useState(null);
@@ -678,6 +684,12 @@ export default function TioJohnny() {
         setFloatingHearts((prev) => prev.filter((h) => !newHearts.some((n) => n.id === h.id)));
       }, 1200);
     }
+  }, [favorites]);
+
+  useEffect(() => {
+    try {
+      document.cookie = "tj_favs=" + encodeURIComponent(JSON.stringify(favorites)) + ";max-age=31536000;path=/;SameSite=Lax";
+    } catch (_) {}
   }, [favorites]);
 
   // Helper: get categories array from a talent (supports old string format + new array format)
@@ -2466,6 +2478,7 @@ export default function TioJohnny() {
     };
 
     return (
+      <>
       <div className={`fixed inset-0 z-50 flex flex-col ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "#12122a" }}>
         {/* ── Ambient color glow — radiates from behind the hero image ── */}
         <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{ height: "65vh", background: `radial-gradient(ellipse at 50% 30%, ${ambientColor} 0%, transparent 70%)`, transition: "background 0.8s ease", zIndex: 0 }} />
@@ -2478,7 +2491,8 @@ export default function TioJohnny() {
               src={images[carouselIndex]}
               alt={t.name}
               className="w-full h-full object-cover profile-blur-reveal profile-crossfade"
-              style={{ objectPosition: "top", transform: "scale(1.05)" }}
+              style={{ objectPosition: "top", transform: "scale(1.05)", cursor: "zoom-in" }}
+              onClick={() => setLightboxSrc(images[carouselIndex])}
             />
             <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, #12122a 100%)" }} />
             <div className="absolute top-4 right-4 flex gap-2" style={{ zIndex: 5 }}>
@@ -2607,6 +2621,29 @@ export default function TioJohnny() {
           </button>
         </div>
       </div>
+
+      {/* ── Lightbox: tap-to-fullscreen ── */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.95)" }}
+          onClick={() => setLightboxSrc(null)}
+        >
+          <img
+            src={lightboxSrc}
+            alt=""
+            style={{ maxWidth: "100vw", maxHeight: "100vh", objectFit: "contain", userSelect: "none" }}
+          />
+          <button
+            className="absolute top-4 right-4 p-2 rounded-full"
+            style={{ background: "rgba(255,255,255,0.15)" }}
+            onClick={() => setLightboxSrc(null)}
+          >
+            <X size={24} color="#fff" />
+          </button>
+        </div>
+      )}
+      </>
     );
   };
 
