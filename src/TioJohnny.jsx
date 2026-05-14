@@ -1094,6 +1094,9 @@ export default function TioJohnny() {
     await fetchTalents();
   };
 
+  // ─── Delete confirm state ──────────────────────────────────────────
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
   // ─── Reorder talents (swap sort_order with neighbor) ──────────────
   const [reordering, setReordering] = useState(false);
   const handleReorder = async (id, direction) => {
@@ -3145,6 +3148,20 @@ export default function TioJohnny() {
                 <button onClick={() => handleArchive(t.id, true)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }} title="Archivar">
                   <Archive size={16} color="#f59e0b" />
                 </button>
+                {confirmDeleteId === t.id ? (
+                  <button
+                    onClick={() => { handleDelete(t.id); setConfirmDeleteId(null); }}
+                    className="px-2 py-2 rounded-xl text-xs font-bold transition-all active:scale-90"
+                    style={{ background: "#f43f5e", color: "#fff" }}
+                    onBlur={() => setConfirmDeleteId(null)}
+                  >
+                    ¿Seguro?
+                  </button>
+                ) : (
+                  <button onClick={() => setConfirmDeleteId(t.id)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }} title="Eliminar">
+                    <Trash2 size={16} color="#f43f5e" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
