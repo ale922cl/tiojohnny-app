@@ -23,6 +23,25 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLACEHOLDER SVG (shown when no photos uploaded)
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATIC DATA
+// ═══════════════════════════════════════════════════════════════════════════════
+const COMUNAS_SANTIAGO = [
+  "Alhué","Buin","Calera de Tango","Cerrillos","Cerro Navia","Colina","Conchalí",
+  "Curacaví","El Bosque","El Monte","Estación Central","Huechuraba","Independencia",
+  "Isla de Maipo","La Cisterna","La Florida","La Granja","La Pintana","La Reina",
+  "Lampa","Las Condes","Lo Barnechea","Lo Espejo","Lo Prado","Macul","Maipú",
+  "María Pinto","Melipilla","Ñuñoa","Padre Hurtado","Paine","Pedro Aguirre Cerda",
+  "Peñaflor","Peñalolén","Pirque","Providencia","Pudahuel","Puente Alto","Quilicura",
+  "Quinta Normal","Recoleta","Renca","San Bernardo","San Joaquín","San José de Maipo",
+  "San Miguel","San Pedro","Santiago","Talagante","Til Til","Vitacura",
+];
+const NATIONALITIES = [
+  "Chilena","Venezolana","Colombiana","Peruana","Argentina","Brasileña",
+  "Ecuatoriana","Boliviana","Dominicana","Haitiana","Cubana","Paraguaya",
+  "Uruguaya","Mexicana","Española","Otra",
+];
+
 const PALETTES = [
   { bg1: "#6d28d9", bg2: "#c084fc", skin: "#d4a574", hair: "#1a0a2e", accent: "#a78bfa", top: "#2d1b69" },
   { bg1: "#1e3a5f", bg2: "#7dd3fc", skin: "#c68642", hair: "#0d0d0d", accent: "#60a5fa", top: "#1e293b" },
@@ -287,6 +306,26 @@ const ANIM_CSS = `
 .badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
 `;
 
+function CopyLinkButton({ url }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm transition-all flex-shrink-0"
+      style={{ background: copied ? "rgba(34,197,94,0.15)" : "#2a2a4a", color: copied ? "#22c55e" : "#8B5CF6", border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "transparent"}` }}
+    >
+      {copied ? <Check size={14} /> : <Share2 size={14} />}
+      {copied ? "Copiado" : "Copiar"}
+    </button>
+  );
+}
+
 let animStyleInjected = false;
 function injectAnimStyles() {
   if (animStyleInjected) return;
@@ -385,7 +424,7 @@ export default function TioJohnny() {
   const csvFileRef = useRef(null);
 
   // ─── Analytics state ───────────────────────────────────────────────
-  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "analytics" | "promo"
+  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "pendientes" | "analytics"
   const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -420,6 +459,31 @@ export default function TioJohnny() {
   const [currency, setCurrency] = useState("CLP"); // "CLP" | "USD" | "EUR"
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [exchangeRates, setExchangeRates] = useState({ CLP: 1, USD: 0, EUR: 0 });
+
+  // ─── Registration form state ───────────────────────────────────────
+  const [regName, setRegName] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regAge, setRegAge] = useState("");
+  const [regNationality, setRegNationality] = useState("");
+  const [regLocation, setRegLocation] = useState("");
+  const [regPhotos, setRegPhotos] = useState([]);
+  const [regAbout, setRegAbout] = useState("");
+  const [regRate, setRegRate] = useState("");
+  const [regHeight, setRegHeight] = useState("");
+  const [regWeight, setRegWeight] = useState("");
+  const [regEyes, setRegEyes] = useState("");
+  const [regHair, setRegHair] = useState("");
+  const [regSizes, setRegSizes] = useState("");
+  const [regInstagram, setRegInstagram] = useState("");
+  const [regSpecialty, setRegSpecialty] = useState("");
+  const [regUploading, setRegUploading] = useState(false);
+  const [regSubmitting, setRegSubmitting] = useState(false);
+  const [regSuccess, setRegSuccess] = useState(false);
+  const [regErrors, setRegErrors] = useState({});
+  const regFileRef = useRef(null);
+
+  // ─── Pending talents state (admin) ────────────────────────────────
+  const [pendingTalents, setPendingTalents] = useState([]);
 
   // ─── Category morph state ──────────────────────────────────────────
   const [gridMorphing, setGridMorphing] = useState(false);
@@ -463,6 +527,11 @@ export default function TioJohnny() {
     // Auto-hide after 4 seconds
     setTimeout(() => setCountersShown(false), 4000);
   }, [talents]);
+
+  // ─── Fetch pending on admin login ────────────────────────────────
+  useEffect(() => {
+    if (session) fetchPending();
+  }, [session]);
 
   // ─── Fetch trending data ──────────────────────────────────────────
   useEffect(() => {
@@ -563,6 +632,7 @@ export default function TioJohnny() {
   useEffect(() => {
     const openFromHash = () => {
       const hash = window.location.hash;
+      if (hash === "#/registro") { setView("registro"); return; }
       const idMatch = hash.match(/^#\/modelo\/(\d+)$/);
       const slugMatch = !idMatch && hash.match(/^#\/([a-z0-9-]+)$/);
       const found = idMatch
@@ -570,7 +640,7 @@ export default function TioJohnny() {
         : slugMatch
           ? talentsRef.current.find((x) => toSlug(x.name) === slugMatch[1])
           : null;
-      if (found && !found.archived) {
+      if (found && !found.archived && found.status !== "pendiente") {
         setSelectedTalent(found);
         setCarouselIndex(0);
         setView("public");
@@ -812,6 +882,7 @@ export default function TioJohnny() {
 
   const filtered = talents.filter((t) => {
     if (t.archived) return false;
+    if (t.status === "pendiente") return false;
     const talentCats = getTalentCategories(t);
     const matchCat = activeCategory === "Todas" || (activeCategory === "Favoritas" ? favorites.includes(t.id) : talentCats.includes(activeCategory));
     const q = searchQuery.toLowerCase();
@@ -1046,6 +1117,81 @@ export default function TioJohnny() {
     }
     await supabase.from("talents").delete().eq("id", id);
     await fetchTalents();
+  };
+
+  // ─── Pending talent handlers ───────────────────────────────────────
+  const fetchPending = async () => {
+    const { data, error } = await supabase.from("talents").select("*").eq("status", "pendiente");
+    if (!error && data) setPendingTalents(data);
+  };
+
+  const handleApprove = async (id) => {
+    await supabase.from("talents").update({ status: "active" }).eq("id", id);
+    await fetchTalents();
+    await fetchPending();
+  };
+
+  const handleReject = async (id) => {
+    const t = pendingTalents.find((x) => x.id === id);
+    if (t?.photos) {
+      for (const url of t.photos) {
+        try { await deletePhoto(url); } catch (e) { console.error(e); }
+      }
+    }
+    await supabase.from("talents").delete().eq("id", id);
+    await fetchPending();
+  };
+
+  // ─── Registration form handlers ────────────────────────────────────
+  const handleRegPhotoUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    setRegUploading(true);
+    const tempId = "reg_" + Date.now();
+    for (const file of files) {
+      try {
+        const url = await uploadPhoto(file, tempId);
+        setRegPhotos((prev) => [...prev, url]);
+      } catch (err) { console.error(err); }
+    }
+    setRegUploading(false);
+    if (e.target) e.target.value = "";
+  };
+
+  const handleRegSubmit = async () => {
+    const errors = {};
+    if (!regPhotos.length) errors.photos = "Agrega al menos 1 foto";
+    if (!regName.trim()) errors.name = "El nombre es obligatorio";
+    if (!regLocation) errors.location = "Selecciona tu comuna";
+    if (!regAge.trim()) errors.age = "La edad es obligatoria";
+    if (!regNationality) errors.nationality = "Selecciona tu nacionalidad";
+    if (!regPhone.trim()) errors.phone = "El teléfono es obligatorio";
+    if (Object.keys(errors).length) { setRegErrors(errors); return; }
+    setRegErrors({});
+    setRegSubmitting(true);
+    const maxOrder = talents.length > 0 ? Math.max(...talents.map((t) => t.sort_order ?? 0)) : 0;
+    await supabase.from("talents").insert([{
+      name: regName.trim(),
+      phone: fmtPhone(regPhone),
+      age: regAge.trim(),
+      nationality: regNationality,
+      location: regLocation,
+      photos: regPhotos,
+      about: regAbout.trim(),
+      rate: regRate.trim() ? fmtRate(regRate) : "",
+      height: regHeight.trim() ? fmtHeight(regHeight) : "",
+      weight: regWeight.trim() ? fmtWeight(regWeight) : "",
+      eyes: regEyes.trim(),
+      hair: regHair.trim(),
+      sizes: regSizes.trim(),
+      instagram: regInstagram.trim() ? fmtInstagram(regInstagram) : "",
+      specialty: regSpecialty.trim(),
+      status: "pendiente",
+      sort_order: maxOrder + 1,
+      archived: false,
+    }]);
+    setRegSubmitting(false);
+    setRegSuccess(true);
   };
 
   // ─── CSV Import handlers ───────────────────────────────────────────
@@ -1934,9 +2080,10 @@ export default function TioJohnny() {
     });
   };
 
-  // Split talents into active and archived for admin
-  const activeTalents = talents.filter((t) => !t.archived);
-  const archivedTalents = talents.filter((t) => t.archived);
+  // Split talents into active / archived / pending for admin
+  const activeTalents = talents.filter((t) => !t.archived && t.status !== "pendiente");
+  const archivedTalents = talents.filter((t) => t.archived && t.status !== "pendiente");
+  const pendingForAdmin = pendingTalents; // from separate fetch
 
   // ─── Shared styles ────────────────────────────────────────────────────
   const inputStyle = { background: "#12122a", border: "1px solid #2a2a4a" };
@@ -2214,6 +2361,178 @@ export default function TioJohnny() {
   // ═════════════════════════════════════════════════════════════════════════
   // RENDER: ADMIN DASHBOARD
   // ═════════════════════════════════════════════════════════════════════════
+  // ═════════════════════════════════════════════════════════════════════════
+  // RENDER: SELF-SIGNUP (public registration form)
+  // ═════════════════════════════════════════════════════════════════════════
+  if (view === "registro") {
+    const Field = ({ label, required, error, children }) => (
+      <div>
+        <label className="text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: required ? "#e2e2f0" : "#9898b0" }}>
+          {label} {required && <span style={{ color: "#f43f5e" }}>*</span>}
+        </label>
+        {children}
+        {error && <p className="text-xs mt-1" style={{ color: "#f43f5e" }}>{error}</p>}
+      </div>
+    );
+    const inp = "w-full px-3 py-2.5 rounded-xl text-sm text-white outline-none";
+    const inpStyle = { background: "#1e1e3a", border: "1px solid #2a2a4a" };
+    const inpErrStyle = (k) => ({ background: "#1e1e3a", border: `1px solid ${regErrors[k] ? "#f43f5e" : "#2a2a4a"}` });
+
+    if (regSuccess) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#12122a" }}>
+          <div className="text-center max-w-sm">
+            <div className="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center" style={{ background: "rgba(139,92,246,0.2)", border: "2px solid #8B5CF6" }}>
+              <Check size={36} color="#8B5CF6" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">¡Solicitud enviada!</h2>
+            <p className="text-sm mb-6" style={{ color: "#9898b0" }}>
+              Revisaremos tu perfil y te contactaremos pronto al número que dejaste.
+            </p>
+            <button
+              onClick={() => { setView("public"); window.location.hash = ""; }}
+              className="px-6 py-3 rounded-xl font-bold text-white text-sm"
+              style={{ background: "#8B5CF6" }}
+            >
+              Ver el catálogo
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen pb-10" style={{ background: "#12122a", color: "#fff" }}>
+        {/* Header */}
+        <div className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3" style={{ background: "#12122a", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
+          <button onClick={() => { setView("public"); window.location.hash = ""; }}>
+            <ArrowLeft size={20} color="#8B5CF6" />
+          </button>
+          <div>
+            <h1 className="text-base font-bold text-white">Únete al catálogo</h1>
+            <p className="text-xs" style={{ color: "#7878a0" }}>Completa tu perfil y te contactamos</p>
+          </div>
+        </div>
+
+        <div className="px-4 pt-4 space-y-5 max-w-lg mx-auto">
+          {/* Photos — mandatory */}
+          <Field label="Fotos" required error={regErrors.photos}>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {regPhotos.map((url, i) => (
+                <div key={i} className="relative rounded-xl overflow-hidden" style={{ width: 80, height: 100 }}>
+                  <img src={url} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+                  <button
+                    onClick={() => setRegPhotos((prev) => prev.filter((_, j) => j !== i))}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: "rgba(0,0,0,0.7)" }}
+                  >
+                    <X size={10} color="#fff" />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => regFileRef.current?.click()}
+                disabled={regUploading}
+                className="flex flex-col items-center justify-center rounded-xl gap-1"
+                style={{ width: 80, height: 100, background: "#1e1e3a", border: "2px dashed #2a2a4a", color: "#8B5CF6" }}
+              >
+                {regUploading ? <Loader2 size={20} className="animate-spin" /> : <Camera size={20} />}
+                <span style={{ fontSize: 10 }}>{regUploading ? "Subiendo..." : "Agregar"}</span>
+              </button>
+            </div>
+            <input ref={regFileRef} type="file" accept="image/*" multiple onChange={handleRegPhotoUpload} className="hidden" />
+          </Field>
+
+          {/* Mandatory fields */}
+          <Field label="Nombre completo" required error={regErrors.name}>
+            <input className={inp} style={inpErrStyle("name")} placeholder="Ej: Valentina Rojas" value={regName} onChange={(e) => setRegName(e.target.value)} />
+          </Field>
+
+          <Field label="Teléfono / WhatsApp" required error={regErrors.phone}>
+            <input className={inp} style={inpErrStyle("phone")} placeholder="+56 9 XXXX XXXX" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} inputMode="tel" />
+          </Field>
+
+          <Field label="Edad" required error={regErrors.age}>
+            <input className={inp} style={inpErrStyle("age")} placeholder="Ej: 24" value={regAge} onChange={(e) => setRegAge(e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={2} />
+          </Field>
+
+          <Field label="Nacionalidad" required error={regErrors.nationality}>
+            <select className={inp} style={inpErrStyle("nationality")} value={regNationality} onChange={(e) => setRegNationality(e.target.value)}>
+              <option value="">Selecciona...</option>
+              {NATIONALITIES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </Field>
+
+          <Field label="Comuna (Santiago)" required error={regErrors.location}>
+            <select className={inp} style={inpErrStyle("location")} value={regLocation} onChange={(e) => setRegLocation(e.target.value)}>
+              <option value="">Selecciona tu comuna...</option>
+              {COMUNAS_SANTIAGO.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+
+          {/* Optional fields */}
+          <div className="pt-2" style={{ borderTop: "1px solid rgba(139,92,246,0.15)" }}>
+            <p className="text-xs font-semibold mb-4" style={{ color: "#8B5CF6" }}>INFORMACIÓN ADICIONAL (opcional)</p>
+            <div className="space-y-4">
+              <Field label="Descripción / Bio">
+                <textarea className={inp} style={inpStyle} rows={3} placeholder="Cuéntanos sobre ti, tu experiencia, disponibilidad..." value={regAbout} onChange={(e) => setRegAbout(e.target.value)} />
+              </Field>
+
+              <Field label="Especialidad">
+                <input className={inp} style={inpStyle} placeholder="Ej: Modelo, Promotora, Animadora..." value={regSpecialty} onChange={(e) => setRegSpecialty(e.target.value)} />
+              </Field>
+
+              <Field label="Tarifa (CLP)">
+                <input className={inp} style={inpStyle} placeholder="Ej: 80000" value={regRate} onChange={(e) => setRegRate(e.target.value)} inputMode="numeric" />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Altura">
+                  <input className={inp} style={inpStyle} placeholder="Ej: 1.72" value={regHeight} onChange={(e) => setRegHeight(e.target.value)} />
+                </Field>
+                <Field label="Peso">
+                  <input className={inp} style={inpStyle} placeholder="Ej: 58" value={regWeight} onChange={(e) => setRegWeight(e.target.value)} />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Color de ojos">
+                  <input className={inp} style={inpStyle} placeholder="Ej: Café" value={regEyes} onChange={(e) => setRegEyes(e.target.value)} />
+                </Field>
+                <Field label="Color de cabello">
+                  <input className={inp} style={inpStyle} placeholder="Ej: Moreno" value={regHair} onChange={(e) => setRegHair(e.target.value)} />
+                </Field>
+              </div>
+
+              <Field label="Talla / Medidas">
+                <input className={inp} style={inpStyle} placeholder="Ej: S / 34-26-36" value={regSizes} onChange={(e) => setRegSizes(e.target.value)} />
+              </Field>
+
+              <Field label="Instagram">
+                <input className={inp} style={inpStyle} placeholder="@tu_usuario" value={regInstagram} onChange={(e) => setRegInstagram(e.target.value)} />
+              </Field>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            onClick={handleRegSubmit}
+            disabled={regSubmitting}
+            className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2 transition-transform active:scale-95"
+            style={{ background: "#8B5CF6", opacity: regSubmitting ? 0.7 : 1 }}
+          >
+            {regSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
+            {regSubmitting ? "Enviando..." : "Enviar solicitud"}
+          </button>
+
+          <p className="text-center text-xs pb-4" style={{ color: "#4a4a6a" }}>
+            Tu perfil será revisado antes de publicarse. Te contactaremos por WhatsApp.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (view === "admin") {
     return (
       <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
@@ -2242,6 +2561,18 @@ export default function TioJohnny() {
             style={{ background: adminTab === "profiles" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "profiles" ? "#fff" : "#7878a0" }}
           >
             <Users size={16} /> Perfiles
+          </button>
+          <button
+            onClick={() => { setAdminTab("pendientes"); fetchPending(); }}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all relative"
+            style={{ background: adminTab === "pendientes" ? "#f59e0b" : "#1e1e3a", color: adminTab === "pendientes" ? "#fff" : "#7878a0" }}
+          >
+            <AlertCircle size={16} /> Pendientes
+            {pendingForAdmin.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white font-bold flex items-center justify-center" style={{ background: "#f43f5e", fontSize: 10 }}>
+                {pendingForAdmin.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => { setAdminTab("analytics"); if (!analyticsData) fetchAnalytics(); }}
@@ -2547,6 +2878,81 @@ export default function TioJohnny() {
           </div>
         )}
 
+        {/* ═══ PENDIENTES TAB ═══ */}
+        {adminTab === "pendientes" && (
+          <div className="px-4 py-3">
+            {pendingForAdmin.length === 0 ? (
+              <div className="text-center py-16">
+                <Check size={40} color="#22c55e" className="mx-auto mb-3" />
+                <p className="text-sm" style={{ color: "#6b6b90" }}>No hay solicitudes pendientes.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs" style={{ color: "#7878a0" }}>{pendingForAdmin.length} solicitud{pendingForAdmin.length !== 1 ? "es" : ""} esperando revisión</p>
+                {pendingForAdmin.map((t) => (
+                  <div key={t.id} className="rounded-2xl overflow-hidden" style={{ background: "#1e1e3a", border: "1px solid rgba(245,158,11,0.3)" }}>
+                    {/* Photos strip */}
+                    {(t.photos || []).length > 0 && (
+                      <div className="flex gap-1 p-2 overflow-x-auto">
+                        {t.photos.map((url, i) => (
+                          <img key={i} src={url} alt="" className="rounded-lg flex-shrink-0 object-cover" style={{ width: 72, height: 90, objectPosition: "top" }} />
+                        ))}
+                      </div>
+                    )}
+                    <div className="px-3 pb-3 pt-1">
+                      <h3 className="text-sm font-bold text-white">{t.name}</h3>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1.5">
+                        {[
+                          ["Edad", t.age],
+                          ["Nacionalidad", t.nationality],
+                          ["Comuna", t.location],
+                          ["Teléfono", t.phone],
+                          ["Especialidad", t.specialty],
+                          ["Tarifa", t.rate],
+                          ["Altura", t.height],
+                          ["Cabello", t.hair],
+                        ].filter(([, v]) => v).map(([label, val]) => (
+                          <p key={label} className="text-xs" style={{ color: "#9898b0" }}>
+                            <span style={{ color: "#6b6b90" }}>{label}: </span>{val}
+                          </p>
+                        ))}
+                      </div>
+                      {t.about && <p className="text-xs mt-2 leading-relaxed" style={{ color: "#c4c4d8" }}>{t.about}</p>}
+                      {t.instagram && <p className="text-xs mt-1" style={{ color: "#E1306C" }}>{t.instagram}</p>}
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => handleApprove(t.id)}
+                          className="flex-1 py-2.5 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-1.5 transition-transform active:scale-95"
+                          style={{ background: "#22c55e" }}
+                        >
+                          <Check size={15} /> Aprobar
+                        </button>
+                        <button
+                          onClick={() => handleReject(t.id)}
+                          className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-transform active:scale-95"
+                          style={{ background: "#2a2a4a", color: "#f43f5e" }}
+                        >
+                          <X size={15} /> Rechazar
+                        </button>
+                        {t.phone && (
+                          <a
+                            href={`https://wa.me/${t.phone.replace(/\D/g, "")}?text=${encodeURIComponent("Hola " + t.name.split(" ")[0] + ", revisamos tu solicitud en TioJohnny.cl 🎉")}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="p-2.5 rounded-xl flex items-center justify-center"
+                            style={{ background: "#2a2a4a" }}
+                          >
+                            <MessageCircle size={16} color="#25D366" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ═══ PROFILES TAB ═══ */}
         {adminTab === "profiles" && (
         <>
@@ -2557,6 +2963,17 @@ export default function TioJohnny() {
           <button onClick={() => { setCsvImportOpen((o) => !o); setCsvPreview([]); setCsvResult(null); }} className="py-3 px-4 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: csvImportOpen ? "#2a2a4a" : "#1e1e3a", border: "1px solid #2a2a4a" }}>
             <FileSpreadsheet size={18} color="#8B5CF6" />
           </button>
+        </div>
+
+        {/* ── Registration link ── */}
+        <div className="px-4 pb-3">
+          <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: "#1e1e3a", border: "1px solid rgba(139,92,246,0.2)" }}>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white mb-0.5">Enlace de Registro</p>
+              <p className="text-xs truncate" style={{ color: "#7878a0" }}>{window.location.origin}/#/registro</p>
+            </div>
+            <CopyLinkButton url={`${window.location.origin}/#/registro`} />
+          </div>
         </div>
 
         {/* ── CSV Import ── */}
@@ -3298,6 +3715,7 @@ export default function TioJohnny() {
               const maxTrend = allCounts.length ? Math.max(...allCounts) : 1;
               const trendRank = allCounts.filter(c => c > trendViews).length;
               const isTrending = trendViews >= 3 && trendRank < Math.ceil(allCounts.length * 0.2);
+              const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
@@ -3328,11 +3746,18 @@ export default function TioJohnny() {
                       <Heart size={16} color={isFav ? "#f43f5e" : "#fff"} fill={isFav ? "#f43f5e" : "none"} />
                     </button>
                     <div className="absolute bottom-0 left-0 right-0 p-3">
+                      <div className="flex flex-wrap gap-1 mb-1">
                       {isTrending && (
-                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full mb-1" style={{ background: "rgba(251,146,60,0.2)", border: "1px solid rgba(251,146,60,0.4)" }}>
-                          <span style={{ fontSize: 9, color: "#fb923c" }}>🔥 {trendViews} vistas esta semana</span>
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.2)", border: "1px solid rgba(251,146,60,0.4)" }}>
+                          <span style={{ fontSize: 9, color: "#fb923c" }}>🔥 {trendViews} vistas</span>
                         </div>
                       )}
+                      {isNew && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.4)" }}>
+                          <span style={{ fontSize: 9, color: "#22c55e" }}>✨ Nuevo</span>
+                        </div>
+                      )}
+                      </div>
                       <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
                       <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
                       <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{formatRate(t.rate)}</p>
