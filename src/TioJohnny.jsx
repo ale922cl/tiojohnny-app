@@ -1757,84 +1757,136 @@ export default function TioJohnny() {
   }, []);
 
   // ─── Share Card (poster image download) ─────────────────────────
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
   const generateShareCard = useCallback(async (t) => {
+    const W = 600, H = 1060;
     const canvas = document.createElement("canvas");
-    canvas.width = 600;
-    canvas.height = 900;
+    canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
 
-    // Background
+    // ── Background ──
     ctx.fillStyle = "#12122a";
-    ctx.fillRect(0, 0, 600, 900);
+    ctx.fillRect(0, 0, W, H);
 
-    // Try to load photo
+    // ── Photo (top 58%) ──
+    const photoH = 620;
     try {
       const img = new Image();
       img.crossOrigin = "anonymous";
       await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = getMainPhoto(t); });
+      // cover-fit: fill width, crop height from top
       const aspect = img.naturalWidth / img.naturalHeight;
-      const drawH = 700;
-      const drawW = drawH * aspect;
-      const offsetX = (600 - drawW) / 2;
-      ctx.drawImage(img, offsetX, 0, drawW, drawH);
+      const drawW = W;
+      const drawH = drawW / aspect;
+      ctx.drawImage(img, 0, 0, drawW, Math.max(drawH, photoH));
     } catch (_) {}
 
-    ctx.fillStyle = "#12122a";
-    ctx.fillRect(0, 600, 600, 300);
-    ctx.fillStyle = "rgba(18,18,42,0.85)";
-    ctx.fillRect(0, 400, 600, 200);
+    // Gradient over photo bottom
+    const grad = ctx.createLinearGradient(0, photoH - 220, 0, photoH);
+    grad.addColorStop(0, "rgba(18,18,42,0)");
+    grad.addColorStop(1, "#12122a");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, photoH - 220, W, 220);
 
-    // Gradient
-    const g2 = ctx.createLinearGradient(0, 400, 0, 700);
-    g2.addColorStop(0, "transparent");
-    g2.addColorStop(1, "rgba(18,18,42,0.95)");
-    ctx.fillStyle = g2;
-    ctx.fillRect(0, 400, 600, 300);
-
-    // Name
+    // ── Name ──
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 44px Arial";
-    ctx.fillText(t.name, 40, 680);
+    ctx.font = "bold 46px Arial";
+    ctx.fillText(t.name, 36, photoH - 90);
 
-    // Specialty + rate
-    ctx.fillStyle = "#8B5CF6";
-    ctx.font = "24px Arial";
-    ctx.fillText(`${t.specialty || ""}  ·  ${formatRate(t.rate)}`, 40, 720);
-
-    // Location
-    if (t.location) {
-      ctx.fillStyle = "#9898b0";
-      ctx.font = "20px Arial";
-      ctx.fillText(`📍 ${t.location}`, 40, 758);
-    }
-
-    // Divider
-    ctx.strokeStyle = "rgba(139,92,246,0.3)";
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(40, 780); ctx.lineTo(560, 780); ctx.stroke();
-
-    // TioJohnny branding
+    // ── Specialty · Rate ──
     ctx.fillStyle = "#8B5CF6";
     ctx.font = "bold 22px Arial";
-    ctx.fillText("Tio", 40, 820);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText("Johnny", 40 + ctx.measureText("Tio").width, 820);
-    ctx.fillStyle = "#4a4a6a";
-    ctx.font = "18px Arial";
-    ctx.fillText(".cl", 40 + ctx.measureText("TioJohnny").width + 2, 820);
+    const specialtyLine = [t.specialty, formatRate(t.rate)].filter(Boolean).join("  ·  ");
+    ctx.fillText(specialtyLine, 36, photoH - 54);
 
-    // Profile URL
+    // ── Location ──
+    if (t.location) {
+      ctx.fillStyle = "#9898b0";
+      ctx.font = "19px Arial";
+      ctx.fillText(`📍 ${t.location}`, 36, photoH - 22);
+    }
+
+    // ── Stats grid ──
+    const stats = [
+      { label: "Edad", value: t.age },
+      { label: "Altura", value: t.height },
+      { label: "Peso", value: t.weight },
+      { label: "Ojos", value: t.eyes },
+      { label: "Cabello", value: t.hair },
+      { label: "Talla", value: t.sizes },
+      { label: "Nacionalidad", value: t.nationality },
+    ].filter((s) => s.value);
+
+    const cols = 3;
+    const cellW = (W - 72) / cols;
+    const cellH = 72;
+    const gridTop = photoH + 16;
+
+    stats.forEach((s, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = 36 + col * cellW;
+      const y = gridTop + row * cellH;
+
+      // Cell bg
+      ctx.fillStyle = "#1e1e3a";
+      roundRect(ctx, x, y, cellW - 8, cellH - 8, 10);
+      ctx.fill();
+
+      // Label
+      ctx.fillStyle = "#7878a0";
+      ctx.font = "11px Arial";
+      ctx.fillText(s.label.toUpperCase(), x + 12, y + 22);
+
+      // Value
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 17px Arial";
+      ctx.fillText(s.value, x + 12, y + 46);
+    });
+
+    // ── Divider ──
+    const divY = gridTop + (Math.ceil(stats.length / cols)) * cellH + 10;
+    ctx.strokeStyle = "rgba(139,92,246,0.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(36, divY); ctx.lineTo(W - 36, divY); ctx.stroke();
+
+    // ── Branding ──
+    const brandY = divY + 36;
+    ctx.font = "bold 24px Arial";
+    ctx.fillStyle = "#8B5CF6";
+    ctx.fillText("Tio", 36, brandY);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("Johnny", 36 + ctx.measureText("Tio").width, brandY);
+    ctx.fillStyle = "#4a4a6a";
+    ctx.font = "20px Arial";
+    ctx.fillText(".cl", 36 + ctx.measureText("TioJohnny").width + 2, brandY);
+
+    // ── URL ──
     const slug = toSlug(t.name);
     ctx.fillStyle = "#4a4a6a";
-    ctx.font = "16px Arial";
-    ctx.fillText(`tiojohnny.cl/#/${slug}`, 40, 855);
+    ctx.font = "15px Arial";
+    ctx.fillText(`tiojohnny.cl/#/${slug}`, 36, brandY + 28);
 
-    // Download
+    // ── Download ──
     const link = document.createElement("a");
     link.download = `${slug}-tiojohnny.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   }, [formatRate, getMainPhoto]);
+
 
   // ─── Drag-to-reorder photos ───────────────────────────────────────
   const [dragIdx, setDragIdx] = useState(null);
@@ -2865,13 +2917,6 @@ export default function TioJohnny() {
               <ImageIcon size={18} color="#ec4899" />
             </div>
             <span className="text-xs font-semibold" style={{ color: "#ec4899" }}>Tarjeta</span>
-          </button>
-          {/* Tarjeta Pro */}
-          <button onClick={() => generateCompCard(t)} disabled={compCardLoading} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
-            <div className="rounded-full flex items-center justify-center" style={{ width: 52, height: 52, background: "#1e1e3a", border: "2px solid #8B5CF6" }}>
-              {compCardLoading ? <Loader2 size={18} color="#8B5CF6" className="animate-spin" /> : <Download size={18} color="#8B5CF6" />}
-            </div>
-            <span className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>Tarjeta Pro</span>
           </button>
           {/* Share */}
           <button onClick={(e) => handleShare(t, e)} className="flex flex-col items-center gap-1 transition-transform active:scale-90">
