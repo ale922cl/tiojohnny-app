@@ -3757,9 +3757,7 @@ export default function TioJohnny() {
               const maxTrend = allCounts.length ? Math.max(...allCounts) : 1;
               const trendRank = allCounts.filter(c => c > trendViews).length;
               const isTrending = trendViews >= 3 && trendRank < Math.ceil(allCounts.length * 0.2);
-              const NUEVO_SINCE = new Date('2026-05-15').getTime();
-              const createdAt = t.created_at ? new Date(t.created_at).getTime() : 0;
-              const isNew = createdAt >= NUEVO_SINCE && (Date.now() - createdAt) < 7 * 86400000;
+              const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
