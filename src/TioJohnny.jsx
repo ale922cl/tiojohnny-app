@@ -1178,6 +1178,7 @@ export default function TioJohnny() {
     if (!regAge.trim()) errors.age = "La edad es obligatoria";
     if (!regNationality) errors.nationality = "Selecciona tu nacionalidad";
     if (!regPhone.trim()) errors.phone = "El teléfono es obligatorio";
+    if (!regRate.trim()) errors.rate = "La tarifa es obligatoria";
     if (Object.keys(errors).length) { setRegErrors(errors); return; }
     setRegErrors({});
     setRegSubmitting(true);
@@ -2456,6 +2457,10 @@ export default function TioJohnny() {
             <input className={inp} style={inpErrStyle("phone")} placeholder="+56 9 XXXX XXXX" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} inputMode="tel" />
           </Field>
 
+          <Field label="Tarifa (CLP)" required error={regErrors.rate}>
+            <input className={inp} style={inpErrStyle("rate")} placeholder="Ej: 80000" value={regRate} onChange={(e) => setRegRate(e.target.value)} inputMode="numeric" />
+          </Field>
+
           <Field label="Edad" required error={regErrors.age}>
             <input className={inp} style={inpErrStyle("age")} placeholder="Ej: 24" value={regAge} onChange={(e) => setRegAge(e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={2} />
           </Field>
@@ -2484,10 +2489,6 @@ export default function TioJohnny() {
 
               <Field label="Especialidad">
                 <input className={inp} style={inpStyle} placeholder="Ej: Modelo, Promotora, Animadora..." value={regSpecialty} onChange={(e) => setRegSpecialty(e.target.value)} />
-              </Field>
-
-              <Field label="Tarifa (CLP)">
-                <input className={inp} style={inpStyle} placeholder="Ej: 80000" value={regRate} onChange={(e) => setRegRate(e.target.value)} inputMode="numeric" />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
