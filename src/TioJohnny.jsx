@@ -554,8 +554,7 @@ export default function TioJohnny() {
   }, [session]);
 
   // ─── Fetch trending data ──────────────────────────────────────────
-  useEffect(() => {
-    if (!talents.length) return;
+  const fetchTrending = useCallback(() => {
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
     supabase.from("analytics_events")
       .select("talent_id")
@@ -567,6 +566,10 @@ export default function TioJohnny() {
         data.forEach((e) => { if (e.talent_id) counts[e.talent_id] = (counts[e.talent_id] || 0) + 1; });
         setTrendingData(counts);
       });
+  }, []);
+
+  useEffect(() => {
+    if (talents.length) fetchTrending();
   }, [talents]);
 
   // ─── Splash timer ──────────────────────────────────────────────────
@@ -1561,10 +1564,10 @@ export default function TioJohnny() {
     setTimeout(() => {
       setSelectedTalent(null);
       setModalClosing(false);
-      // Clear hash without triggering hashchange reload
       window.history.pushState(null, "", window.location.pathname);
+      fetchTrending();
     }, 250);
-  }, []);
+  }, [fetchTrending]);
 
   // ─── Swipe mode handlers (DOM-direct for 60fps) ─────────────────────
   useEffect(() => { setSwipeIndex(0); }, [activeCategory, searchQuery]);
