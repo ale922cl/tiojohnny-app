@@ -540,9 +540,16 @@ export default function TioJohnny() {
     setTimeout(() => setCountersShown(false), 4000);
   }, [talents]);
 
-  // ─── Fetch pending on admin login ────────────────────────────────
+  // ─── Fetch pending + auto-load analytics for analytics-only users ──
   useEffect(() => {
-    if (session) fetchPending();
+    if (!session) return;
+    const role = session.user?.user_metadata?.role;
+    if (role === "analytics") {
+      setAdminTab("analytics");
+      fetchAnalytics();
+    } else {
+      fetchPending();
+    }
   }, [session]);
 
   // ─── Fetch trending data ──────────────────────────────────────────
@@ -938,6 +945,8 @@ export default function TioJohnny() {
     } else {
       setSession(data.session);
       setView("admin");
+      const role = data.session?.user?.user_metadata?.role;
+      if (role === "analytics") setAdminTab("analytics");
       setLoginEmail("");
       setLoginPassword("");
     }
@@ -2542,14 +2551,15 @@ export default function TioJohnny() {
   }
 
   if (view === "admin") {
+    const isAnalyticsOnly = session?.user?.user_metadata?.role === "analytics";
     return (
       <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
         <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)" }}>
           <div>
             <h1 className="text-lg font-bold text-white flex items-center gap-2">
-              <Lock size={16} color="#8B5CF6" /> Admin Panel
+              <Lock size={16} color="#8B5CF6" /> {isAnalyticsOnly ? "Analytics" : "Admin Panel"}
             </h1>
-            <p className="text-xs" style={{ color: "#7878a0" }}>{talents.length} perfiles &middot; {session?.user?.email}</p>
+            <p className="text-xs" style={{ color: "#7878a0" }}>{session?.user?.email}</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setView("public")} className="p-2 rounded-xl" style={{ background: "#1e1e3a" }}>
@@ -2563,25 +2573,29 @@ export default function TioJohnny() {
 
         {/* Admin tabs */}
         <div className="flex gap-2 px-4 pt-3 pb-1">
-          <button
-            onClick={() => setAdminTab("profiles")}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
-            style={{ background: adminTab === "profiles" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "profiles" ? "#fff" : "#7878a0" }}
-          >
-            <Users size={16} /> Perfiles
-          </button>
-          <button
-            onClick={() => { setAdminTab("pendientes"); fetchPending(); }}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all relative"
-            style={{ background: adminTab === "pendientes" ? "#f59e0b" : "#1e1e3a", color: adminTab === "pendientes" ? "#fff" : "#7878a0" }}
-          >
-            <AlertCircle size={16} /> Pendientes
-            {pendingForAdmin.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white font-bold flex items-center justify-center" style={{ background: "#f43f5e", fontSize: 10 }}>
-                {pendingForAdmin.length}
-              </span>
-            )}
-          </button>
+          {!isAnalyticsOnly && (
+            <button
+              onClick={() => setAdminTab("profiles")}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+              style={{ background: adminTab === "profiles" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "profiles" ? "#fff" : "#7878a0" }}
+            >
+              <Users size={16} /> Perfiles
+            </button>
+          )}
+          {!isAnalyticsOnly && (
+            <button
+              onClick={() => { setAdminTab("pendientes"); fetchPending(); }}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all relative"
+              style={{ background: adminTab === "pendientes" ? "#f59e0b" : "#1e1e3a", color: adminTab === "pendientes" ? "#fff" : "#7878a0" }}
+            >
+              <AlertCircle size={16} /> Pendientes
+              {pendingForAdmin.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white font-bold flex items-center justify-center" style={{ background: "#f43f5e", fontSize: 10 }}>
+                  {pendingForAdmin.length}
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={() => { setAdminTab("analytics"); if (!analyticsData) fetchAnalytics(); }}
             className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
