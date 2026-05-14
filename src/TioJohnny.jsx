@@ -3764,7 +3764,8 @@ export default function TioJohnny() {
               const trendViews = trendingData[t.id] || 0;
               const allCounts = Object.values(trendingData).filter(c => c > 0);
               const trendRank = allCounts.filter(c => c > trendViews).length;
-              const isTrending = trendViews >= 1 && trendRank < Math.ceil(allCounts.length * 0.3);
+              const trendLimit = filtered.length >= 10 ? 3 : 2;
+              const isTrending = trendViews >= 1 && trendRank < trendLimit;
               const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 30 * 86400000;
               return (
                 <div
