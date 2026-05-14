@@ -418,6 +418,7 @@ export default function TioJohnny() {
 
   // ─── Currency state ────────────────────────────────────────────────
   const [currency, setCurrency] = useState("CLP"); // "CLP" | "USD" | "EUR"
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [exchangeRates, setExchangeRates] = useState({ CLP: 1, USD: 0, EUR: 0 });
 
   // ─── Category morph state ──────────────────────────────────────────
@@ -3128,6 +3129,7 @@ export default function TioJohnny() {
       </div>
 
       <div className="px-4 pb-2 flex items-center justify-between">
+        {/* Left: Filtros + Selección + Currency dropdown */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setFiltersOpen((o) => !o)}
@@ -3148,19 +3150,32 @@ export default function TioJohnny() {
           >
             <Users size={11} /> Selección
           </button>
-          <div className="flex items-center gap-0.5">
-            {["CLP", "USD", "EUR"].map((c) => (
-              <button
-                key={c}
-                onClick={() => setCurrency(c)}
-                className="px-1.5 py-1 rounded-full text-xs font-semibold transition-all"
-                style={{ background: currency === c ? "#8B5CF6" : "transparent", color: currency === c ? "#fff" : "#4a4a6a" }}
-              >
-                {c}
-              </button>
-            ))}
+          {/* Currency dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setCurrencyOpen(o => !o)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+              style={{ background: "#1e1e3a", color: "#7878a0", border: "1px solid #2a2a4a" }}
+            >
+              {currency} <ChevronDown size={10} />
+            </button>
+            {currencyOpen && (
+              <div className="absolute left-0 top-full mt-1 rounded-xl overflow-hidden z-30" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                {["CLP", "USD", "EUR"].map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => { setCurrency(c); setCurrencyOpen(false); }}
+                    className="block w-full px-4 py-2 text-xs font-semibold text-left transition-all"
+                    style={{ color: currency === c ? "#8B5CF6" : "#9898b0", background: currency === c ? "rgba(139,92,246,0.1)" : "transparent" }}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
+        {/* Right: Grid / Pasarela toggle */}
         <div className="flex items-center gap-1 rounded-full p-0.5" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
           <button
             onClick={() => { setViewMode("grid"); setSwipeIndex(0); }}
@@ -3174,7 +3189,7 @@ export default function TioJohnny() {
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all"
             style={{ background: viewMode === "swipe" ? "linear-gradient(135deg, #8B5CF6, #ec4899)" : "transparent", color: viewMode === "swipe" ? "#fff" : "#6b6b90" }}
           >
-            <Layers size={12} />
+            <Layers size={12} /> Pasarela
           </button>
         </div>
       </div>
