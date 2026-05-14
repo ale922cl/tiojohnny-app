@@ -337,6 +337,7 @@ export default function TioJohnny() {
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
   const [castMode, setCastMode] = useState(false);
   const [castSelected, setCastSelected] = useState(new Set());
+  const [castToast, setCastToast] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselKey, setCarouselKey] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -3141,7 +3142,7 @@ export default function TioJohnny() {
             </button>
           )}
           <button
-            onClick={() => { setCastMode(v => !v); setCastSelected(new Set()); }}
+            onClick={() => { const next = !castMode; setCastMode(next); setCastSelected(new Set()); if (next) { setCastToast(true); setTimeout(() => setCastToast(false), 3500); } }}
             className="flex items-center justify-center rounded-full transition-all"
             style={{ width: 26, height: 26, background: castMode ? "#8B5CF6" : "#1e1e3a", border: castMode ? "none" : "1px solid #2a2a4a" }}
             title="Cast"
@@ -3286,11 +3287,11 @@ export default function TioJohnny() {
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
-                  onPointerDown={lp.onPointerDown}
-                  onPointerUp={lp.onPointerUp}
-                  onPointerCancel={lp.onPointerCancel}
-                  onPointerMove={handleCardPointerMove}
-                  onPointerLeave={(e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
+                  onPointerDown={castMode ? undefined : lp.onPointerDown}
+                  onPointerUp={castMode ? undefined : lp.onPointerUp}
+                  onPointerCancel={castMode ? undefined : lp.onPointerCancel}
+                  onPointerMove={castMode ? undefined : handleCardPointerMove}
+                  onPointerLeave={castMode ? undefined : (e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
                   onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
                   className="grid-morph-in rounded-2xl cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", ...(isHeartbeat ? { boxShadow: "0 0 20px 8px rgba(244,63,94,0.45)", outline: "2px solid rgba(244,63,94,0.7)", transition: "box-shadow 0.4s ease, outline 0.4s ease" } : { transition: "box-shadow 0.4s ease, outline 0.4s ease" }) }}
@@ -3552,6 +3553,14 @@ export default function TioJohnny() {
             </h1>
             <p className="text-sm mt-2 font-medium" style={{ color: "#6b6b90" }}>Talento Chileno</p>
           </div>
+        </div>
+      )}
+
+      {/* ── Cast mode toast ── */}
+      {castToast && (
+        <div className="fixed top-20 left-1/2 z-50 px-4 py-3 rounded-2xl text-sm text-center" style={{ transform: "translateX(-50%)", background: "#1e1e3a", border: "1px solid #8B5CF6", boxShadow: "0 8px 32px rgba(139,92,246,0.3)", maxWidth: "80vw", animation: "fadeSlideUp 0.3s ease both" }}>
+          <p className="font-bold text-white mb-0.5">Modo Cast activado</p>
+          <p style={{ color: "#9898b0", fontSize: 12 }}>Toca los perfiles que quieras seleccionar y luego envíalos juntos por WhatsApp.</p>
         </div>
       )}
 
