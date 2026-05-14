@@ -384,7 +384,8 @@ export default function TioJohnny() {
   const csvFileRef = useRef(null);
 
   // ─── Analytics state ───────────────────────────────────────────────
-  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "analytics"
+  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "analytics" | "promo"
+  const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [trendingData, setTrendingData] = useState({}); // { talentId: viewCount (last 7 days) }
@@ -3126,7 +3127,7 @@ export default function TioJohnny() {
       </div>
 
       <div className="px-4 pb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             onClick={() => setFiltersOpen((o) => !o)}
             className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
@@ -3135,23 +3136,24 @@ export default function TioJohnny() {
             <SlidersHorizontal size={11} /> Filtros{hasActiveFilters ? " ●" : ""}
           </button>
           {hasActiveFilters && (
-            <button onClick={clearAllFilters} className="text-xs px-2 py-0.5 rounded-full" style={{ color: "#f43f5e", background: "rgba(244,63,94,0.1)" }}>
-              Limpiar
+            <button onClick={clearAllFilters} className="text-xs px-1.5 py-0.5 rounded-full" style={{ color: "#f43f5e", background: "rgba(244,63,94,0.1)" }}>
+              ✕
             </button>
           )}
           <button
             onClick={() => { setCastMode(v => !v); setCastSelected(new Set()); }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
-            style={{ background: castMode ? "#8B5CF6" : "#1e1e3a", color: castMode ? "#fff" : "#7878a0", border: castMode ? "none" : "1px solid #2a2a4a" }}
+            className="flex items-center justify-center rounded-full transition-all"
+            style={{ width: 26, height: 26, background: castMode ? "#8B5CF6" : "#1e1e3a", border: castMode ? "none" : "1px solid #2a2a4a" }}
+            title="Cast"
           >
-            <Users size={11} /> Cast
+            <Users size={11} color={castMode ? "#fff" : "#7878a0"} />
           </button>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             {["CLP", "USD", "EUR"].map((c) => (
               <button
                 key={c}
                 onClick={() => setCurrency(c)}
-                className="px-2 py-1 rounded-full text-xs font-semibold transition-all"
+                className="px-1.5 py-1 rounded-full text-xs font-semibold transition-all"
                 style={{ background: currency === c ? "#8B5CF6" : "transparent", color: currency === c ? "#fff" : "#4a4a6a" }}
               >
                 {c}
@@ -3162,17 +3164,17 @@ export default function TioJohnny() {
         <div className="flex items-center gap-1 rounded-full p-0.5" style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}>
           <button
             onClick={() => { setViewMode("grid"); setSwipeIndex(0); }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-            style={{ background: viewMode === "grid" ? "#8B5CF6" : "transparent", color: viewMode === "grid" ? "#fff" : "#6b6b90" }}
+            className="flex items-center justify-center px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all"
+            style={{ background: viewMode === "grid" ? "#8B5CF6" : "transparent" }}
           >
-            <Grid3X3 size={12} />
+            <Grid3X3 size={12} color={viewMode === "grid" ? "#fff" : "#6b6b90"} />
           </button>
           <button
             onClick={() => { setViewMode("swipe"); setSwipeIndex(0); if (!swipeTutorialShown.current) { setShowSwipeTutorial(true); swipeTutorialShown.current = true; setTimeout(() => setShowSwipeTutorial(false), 2800); } }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all"
             style={{ background: viewMode === "swipe" ? "linear-gradient(135deg, #8B5CF6, #ec4899)" : "transparent", color: viewMode === "swipe" ? "#fff" : "#6b6b90" }}
           >
-            <Layers size={12} /> Pasarela
+            <Layers size={12} />
           </button>
         </div>
       </div>
