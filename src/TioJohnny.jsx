@@ -335,6 +335,7 @@ export default function TioJohnny() {
   const [ambientColor, setAmbientColor] = useState("rgba(139,92,246,0.3)");
   const profileScrollRef = useRef(null);
   const profileHeroRef = useRef(null);
+  const lightboxTouchX = useRef(null);
   const [favorites, setFavorites] = useState(() => {
     try {
       const match = document.cookie.match(/tj_favs=([^;]+)/);
@@ -1066,6 +1067,20 @@ export default function TioJohnny() {
     shareEvents.forEach((e) => { shareCounts[e.talent_id] = (shareCounts[e.talent_id] || 0) + 1; });
     const topShared = Object.entries(shareCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
+    // Contacts per talent (whatsapp + call + instagram) — top 10
+    const contactEvents = events.filter((e) => ["contact_whatsapp", "contact_call", "contact_instagram"].includes(e.event_type) && e.talent_id);
+    const contactByTalent = {};
+    contactEvents.forEach((e) => {
+      if (!contactByTalent[e.talent_id]) contactByTalent[e.talent_id] = { whatsapp: 0, call: 0, instagram: 0 };
+      if (e.event_type === "contact_whatsapp") contactByTalent[e.talent_id].whatsapp++;
+      else if (e.event_type === "contact_call") contactByTalent[e.talent_id].call++;
+      else if (e.event_type === "contact_instagram") contactByTalent[e.talent_id].instagram++;
+    });
+    const topContacted = Object.entries(contactByTalent)
+      .map(([tid, c]) => [tid, c.whatsapp + c.call + c.instagram, c])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+
     // Pasarela stats
     const swipeLikes = events.filter((e) => e.event_type === "swipe_like").length;
     const swipeSkips = events.filter((e) => e.event_type === "swipe_skip").length;
@@ -1132,7 +1147,7 @@ export default function TioJohnny() {
     setAnalyticsData({
       visitors: { today: todayVisitors.size, week: weekVisitors.size, month: allVisitors.size },
       sessions: { today: todaySessions, week: weekSessions, month: monthSessions },
-      topViewed, topFavorited, topShared,
+      topViewed, topFavorited, topShared, topContacted, contactByTalent,
       pasarela: { likes: swipeLikes, skips: swipeSkips, total: swipeTotal },
       topCategories,
       dailyVisitors,
@@ -2163,6 +2178,44 @@ export default function TioJohnny() {
                   </div>
                 ))}
 
+                {/* ── Más Contactadas ── */}
+                {analyticsData.topContacted.length > 0 && (
+                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-1" style={{ color: "#25D366" }}>
+                      <Phone size={12} /> Más Contactadas
+                    </h3>
+                    <div className="space-y-3">
+                      {analyticsData.topContacted.map(([tid, total, breakdown], i) => {
+                        const t = talents.find((x) => x.id === parseInt(tid));
+                        if (!t) return null;
+                        const maxTotal = analyticsData.topContacted[0]?.[1] || 1;
+                        return (
+                          <div key={tid} className="flex items-center gap-2">
+                            <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
+                            <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+                              <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-white truncate">{t.name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <div className="flex-1 rounded-full overflow-hidden" style={{ height: 4, background: "#12122a" }}>
+                                  <div className="h-full rounded-full" style={{ width: `${(total / maxTotal) * 100}%`, background: "#25D366" }} />
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  {breakdown.whatsapp > 0 && <span className="text-xs" style={{ color: "#25D366" }}>WA {breakdown.whatsapp}</span>}
+                                  {breakdown.call > 0 && <span className="text-xs" style={{ color: "#8B5CF6" }}>☎ {breakdown.call}</span>}
+                                  {breakdown.instagram > 0 && <span className="text-xs" style={{ color: "#E1306C" }}>IG {breakdown.instagram}</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold" style={{ color: "#25D366" }}>{total}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Popular categories */}
                 {analyticsData.topCategories.length > 0 && (
                   <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
@@ -2631,6 +2684,15 @@ export default function TioJohnny() {
           className="fixed inset-0 z-[100] flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.97)" }}
           onClick={() => setLightboxIndex(null)}
+          onTouchStart={(e) => { lightboxTouchX.current = e.touches[0].clientX; }}
+          onTouchEnd={(e) => {
+            if (lightboxTouchX.current === null) return;
+            const dx = e.changedTouches[0].clientX - lightboxTouchX.current;
+            lightboxTouchX.current = null;
+            if (Math.abs(dx) < 50) return;
+            e.stopPropagation();
+            setLightboxIndex(dx < 0 ? (lightboxIndex + 1) % imgCount : (lightboxIndex - 1 + imgCount) % imgCount);
+          }}
         >
           {/* Photo */}
           <img
