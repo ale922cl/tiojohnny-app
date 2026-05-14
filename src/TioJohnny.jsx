@@ -544,7 +544,8 @@ export default function TioJohnny() {
   useEffect(() => {
     if (!session) return;
     const role = session.user?.user_metadata?.role;
-    if (role === "analytics") {
+    const email = session.user?.email;
+    if (role === "analytics" || email === "aceitunoafarica@hotmail.com") {
       setAdminTab("analytics");
       fetchAnalytics();
     } else {
@@ -946,7 +947,8 @@ export default function TioJohnny() {
       setSession(data.session);
       setView("admin");
       const role = data.session?.user?.user_metadata?.role;
-      if (role === "analytics") setAdminTab("analytics");
+      const email = data.session?.user?.email;
+      if (role === "analytics" || email === "aceitunoafarica@hotmail.com") setAdminTab("analytics");
       setLoginEmail("");
       setLoginPassword("");
     }
@@ -2551,7 +2553,8 @@ export default function TioJohnny() {
   }
 
   if (view === "admin") {
-    const isAnalyticsOnly = session?.user?.user_metadata?.role === "analytics";
+    const ANALYTICS_EMAILS = ["aceitunoafarica@hotmail.com"];
+    const isAnalyticsOnly = session?.user?.user_metadata?.role === "analytics" || ANALYTICS_EMAILS.includes(session?.user?.email);
     return (
       <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
         <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)" }}>
