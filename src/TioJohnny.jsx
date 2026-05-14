@@ -276,6 +276,12 @@ const ANIM_CSS = `
   100% { opacity: 1; transform: scale(1); }
 }
 .profile-crossfade { animation: profileCrossfade 0.4s ease-out both; }
+@keyframes lightboxZoom {
+  0%   { transform: scale(1) translate(0, 0); opacity: 0; }
+  8%   { opacity: 1; }
+  100% { transform: scale(1.08) translate(-1%, -1%); opacity: 1; }
+}
+.lightbox-zoom { animation: lightboxZoom 10s cubic-bezier(0.25,0,0.75,1) forwards; }
 .heart-pop   { animation: heartPop 0.4s cubic-bezier(0.22,1,0.36,1); }
 .pill-pop    { animation: pillPop 0.3s cubic-bezier(0.22,1,0.36,1); }
 .badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
@@ -2681,8 +2687,8 @@ export default function TioJohnny() {
       {/* ── Lightbox: full-screen photo viewer ── */}
       {lightboxIndex !== null && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.97)" }}
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden"
+          style={{ background: "#12122a" }}
           onClick={() => setLightboxIndex(null)}
           onTouchStart={(e) => { lightboxTouchX.current = e.touches[0].clientX; }}
           onTouchEnd={(e) => {
@@ -2694,11 +2700,16 @@ export default function TioJohnny() {
             setLightboxIndex(dx < 0 ? (lightboxIndex + 1) % imgCount : (lightboxIndex - 1 + imgCount) % imgCount);
           }}
         >
+          {/* Ambient glow behind photo */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at 50% 50%, ${ambientColor} 0%, transparent 70%)` }} />
+
           {/* Photo */}
           <img
+            key={lightboxIndex}
             src={images[lightboxIndex]}
             alt=""
-            style={{ maxWidth: "100vw", maxHeight: "100vh", objectFit: "contain", userSelect: "none" }}
+            className="lightbox-zoom"
+            style={{ maxWidth: "100vw", maxHeight: "100vh", objectFit: "contain", userSelect: "none", position: "relative" }}
             onClick={(e) => e.stopPropagation()}
           />
 
