@@ -2342,8 +2342,11 @@ export default function TioJohnny() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Ubicación</label>
-                <input value={formLocation} onChange={(e) => setFormLocation(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="Santiago, RM" />
+                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Ubicación (Comuna)</label>
+                <select value={formLocation} onChange={(e) => setFormLocation(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle}>
+                  <option value="">Selecciona...</option>
+                  {COMUNAS_SANTIAGO.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Instagram (opcional)</label>
@@ -2368,7 +2371,6 @@ export default function TioJohnny() {
                   { val: formHair, set: setFormHair, fmt: null, label: "Cabello", ph: "Castaño" },
                   { val: formAge, set: setFormAge, fmt: fmtAge, label: "Edad", ph: "24" },
                   { val: formSizes, set: setFormSizes, fmt: null, label: "Talla", ph: "S/M" },
-                  { val: formNationality, set: setFormNationality, fmt: null, label: "Nacionalidad", ph: "Chilena" },
                 ].map((s) => (
                   <div key={s.label}>
                     <label className="block mb-1" style={{ fontSize: 10, color: "#7878a0" }}>{s.label}</label>
@@ -2376,6 +2378,13 @@ export default function TioJohnny() {
                   </div>
                 ))}
               </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Nacionalidad</label>
+              <select value={formNationality} onChange={(e) => setFormNationality(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle}>
+                <option value="">Selecciona...</option>
+                {NATIONALITIES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
             </div>
           </div>
 
