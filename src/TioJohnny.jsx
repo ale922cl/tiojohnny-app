@@ -3786,16 +3786,15 @@ export default function TioJohnny() {
                     </button>
                     <div className="absolute bottom-0 left-0 right-0 p-3">
                       <div className="flex flex-wrap gap-1 mb-1">
-                      {isTrending && (
+                      {isTrending ? (
                         <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.2)", border: "1px solid rgba(251,146,60,0.4)" }}>
                           <span style={{ fontSize: 9, color: "#fb923c" }}>🔥 {trendViews} vistas</span>
                         </div>
-                      )}
-                      {isNew && (
+                      ) : isNew ? (
                         <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.4)" }}>
                           <span style={{ fontSize: 9, color: "#22c55e" }}>✨ Nuevo</span>
                         </div>
-                      )}
+                      ) : null}
                       </div>
                       <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
                       <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
