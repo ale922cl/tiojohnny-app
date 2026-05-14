@@ -326,6 +326,18 @@ function CopyLinkButton({ url }) {
   );
 }
 
+function RegField({ label, required, error, children }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: required ? "#e2e2f0" : "#9898b0" }}>
+        {label} {required && <span style={{ color: "#f43f5e" }}>*</span>}
+      </label>
+      {children}
+      {error && <p className="text-xs mt-1" style={{ color: "#f43f5e" }}>{error}</p>}
+    </div>
+  );
+}
+
 let animStyleInjected = false;
 function injectAnimStyles() {
   if (animStyleInjected) return;
@@ -2365,15 +2377,7 @@ export default function TioJohnny() {
   // RENDER: SELF-SIGNUP (public registration form)
   // ═════════════════════════════════════════════════════════════════════════
   if (view === "registro") {
-    const Field = ({ label, required, error, children }) => (
-      <div>
-        <label className="text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: required ? "#e2e2f0" : "#9898b0" }}>
-          {label} {required && <span style={{ color: "#f43f5e" }}>*</span>}
-        </label>
-        {children}
-        {error && <p className="text-xs mt-1" style={{ color: "#f43f5e" }}>{error}</p>}
-      </div>
-    );
+    const Field = RegField;
     const inp = "w-full px-3 py-2.5 rounded-xl text-sm text-white outline-none";
     const inpStyle = { background: "#1e1e3a", border: "1px solid #2a2a4a" };
     const inpErrStyle = (k) => ({ background: "#1e1e3a", border: `1px solid ${regErrors[k] ? "#f43f5e" : "#2a2a4a"}` });
@@ -2444,7 +2448,7 @@ export default function TioJohnny() {
           </Field>
 
           {/* Mandatory fields */}
-          <Field label="Nombre completo" required error={regErrors.name}>
+          <Field label="Nombre" required error={regErrors.name}>
             <input className={inp} style={inpErrStyle("name")} placeholder="Ej: Valentina Rojas" value={regName} onChange={(e) => setRegName(e.target.value)} />
           </Field>
 
