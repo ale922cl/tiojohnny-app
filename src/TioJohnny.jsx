@@ -2491,10 +2491,13 @@ export default function TioJohnny() {
               src={images[carouselIndex]}
               alt={t.name}
               className="w-full h-full object-cover profile-blur-reveal profile-crossfade"
-              style={{ objectPosition: "top", transform: "scale(1.05)", cursor: "zoom-in" }}
+              style={{ objectPosition: "top", transform: "scale(1.05)" }}
+            />
+            <div
+              className="absolute inset-0"
+              style={{ background: "linear-gradient(to bottom, transparent 40%, #12122a 100%)", cursor: "zoom-in" }}
               onClick={() => setLightboxIndex(carouselIndex)}
             />
-            <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, #12122a 100%)" }} />
             <div className="absolute top-4 right-4 flex gap-2" style={{ zIndex: 5 }}>
               <button onClick={(e) => handleShare(t, e)} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
                 {shareConfirm === t.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
