@@ -331,7 +331,7 @@ export default function TioJohnny() {
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [carouselKey, setCarouselKey] = useState(0);
-  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const [ambientColor, setAmbientColor] = useState("rgba(139,92,246,0.3)");
   const profileScrollRef = useRef(null);
   const profileHeroRef = useRef(null);
@@ -2492,7 +2492,7 @@ export default function TioJohnny() {
               alt={t.name}
               className="w-full h-full object-cover profile-blur-reveal profile-crossfade"
               style={{ objectPosition: "top", transform: "scale(1.05)", cursor: "zoom-in" }}
-              onClick={() => setLightboxSrc(images[carouselIndex])}
+              onClick={() => setLightboxIndex(carouselIndex)}
             />
             <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, #12122a 100%)" }} />
             <div className="absolute top-4 right-4 flex gap-2" style={{ zIndex: 5 }}>
@@ -2622,25 +2622,69 @@ export default function TioJohnny() {
         </div>
       </div>
 
-      {/* ── Lightbox: tap-to-fullscreen ── */}
-      {lightboxSrc && (
+      {/* ── Lightbox: full-screen photo viewer ── */}
+      {lightboxIndex !== null && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.95)" }}
-          onClick={() => setLightboxSrc(null)}
+          style={{ background: "rgba(0,0,0,0.97)" }}
+          onClick={() => setLightboxIndex(null)}
         >
+          {/* Photo */}
           <img
-            src={lightboxSrc}
+            src={images[lightboxIndex]}
             alt=""
             style={{ maxWidth: "100vw", maxHeight: "100vh", objectFit: "contain", userSelect: "none" }}
+            onClick={(e) => e.stopPropagation()}
           />
+
+          {/* Close */}
           <button
             className="absolute top-4 right-4 p-2 rounded-full"
-            style={{ background: "rgba(255,255,255,0.15)" }}
-            onClick={() => setLightboxSrc(null)}
+            style={{ background: "rgba(0,0,0,0.5)", zIndex: 1 }}
+            onClick={() => setLightboxIndex(null)}
           >
             <X size={24} color="#fff" />
           </button>
+
+          {/* Prev / Next */}
+          {imgCount > 1 && (
+            <>
+              <button
+                className="absolute left-3 top-1/2 -translate-y-1/2 p-3 rounded-full"
+                style={{ background: "rgba(0,0,0,0.5)" }}
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex - 1 + imgCount) % imgCount); }}
+              >
+                <ChevronLeft size={24} color="#fff" />
+              </button>
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full"
+                style={{ background: "rgba(0,0,0,0.5)" }}
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex + 1) % imgCount); }}
+              >
+                <ChevronRight size={24} color="#fff" />
+              </button>
+            </>
+          )}
+
+          {/* Dot indicators */}
+          {imgCount > 1 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2" onClick={(e) => e.stopPropagation()}>
+              {images.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); }}
+                  style={{ width: i === lightboxIndex ? 24 : 8, height: 8, borderRadius: 9999, background: i === lightboxIndex ? "#fff" : "rgba(255,255,255,0.4)", border: "none", cursor: "pointer", transition: "all 0.2s" }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Counter */}
+          {imgCount > 1 && (
+            <div className="absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-semibold" style={{ background: "rgba(0,0,0,0.5)", color: "#fff" }}>
+              {lightboxIndex + 1} / {imgCount}
+            </div>
+          )}
         </div>
       )}
       </>
