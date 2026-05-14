@@ -3129,7 +3129,7 @@ export default function TioJohnny() {
       </div>
 
       <div className="px-4 pb-2 flex items-center justify-between">
-        {/* Left: Filtros + Selección + Currency dropdown */}
+        {/* Left: Filtros + Cast + Currency dropdown */}
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setFiltersOpen((o) => !o)}
@@ -3148,7 +3148,7 @@ export default function TioJohnny() {
             className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
             style={{ background: castMode ? "#8B5CF6" : "#1e1e3a", color: castMode ? "#fff" : "#7878a0", border: castMode ? "none" : "1px solid #2a2a4a" }}
           >
-            <Users size={11} /> Selección
+            <Users size={11} /> Cast
           </button>
           {/* Currency dropdown */}
           <div className="relative">
@@ -3573,7 +3573,7 @@ export default function TioJohnny() {
       {/* ── Cast mode toast ── */}
       {castToast && (
         <div className="fixed top-20 left-1/2 z-50 px-4 py-3 rounded-2xl text-sm text-center" style={{ transform: "translateX(-50%)", background: "#1e1e3a", border: "1px solid #8B5CF6", boxShadow: "0 8px 32px rgba(139,92,246,0.3)", maxWidth: "80vw", animation: "fadeSlideUp 0.3s ease both" }}>
-          <p className="font-bold text-white mb-0.5">Modo Selección activado</p>
+          <p className="font-bold text-white mb-0.5">Modo Cast activado</p>
           <p style={{ color: "#9898b0", fontSize: 12 }}>Toca los perfiles que quieras incluir y luego envíalos juntos por WhatsApp.</p>
         </div>
       )}
