@@ -851,6 +851,47 @@ export default function TioJohnny() {
     setFormPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // ─── Field auto-formatters (run onBlur) ───────────────────────────────
+  const fmtRate = (v) => {
+    const raw = v.replace(/[$.\s]/g, "").replace(/\/hr.*/i, "").trim();
+    const n = parseInt(raw, 10);
+    if (!raw || isNaN(n)) return v;
+    const formatted = n.toLocaleString("es-CL"); // e.g. 80.000
+    return `$${formatted} /hr`;
+  };
+  const fmtPhone = (v) => {
+    const stripped = v.trim();
+    if (!stripped) return stripped;
+    if (stripped.startsWith("+")) return stripped;
+    const digits = stripped.replace(/\D/g, "");
+    if (digits.startsWith("56")) return `+${digits}`;
+    return `+56${digits}`;
+  };
+  const fmtInstagram = (v) => {
+    const stripped = v.trim();
+    if (!stripped) return stripped;
+    return stripped.startsWith("@") ? stripped : `@${stripped}`;
+  };
+  const fmtHeight = (v) => {
+    const stripped = v.trim();
+    if (!stripped || /[a-zA-Z]/.test(stripped)) return stripped; // already has unit
+    const n = parseFloat(stripped);
+    if (isNaN(n)) return stripped;
+    const meters = n >= 100 ? n / 100 : n; // 175 → 1.75
+    return `${meters.toFixed(2).replace(/\.?0+$/, "")}m`;
+  };
+  const fmtWeight = (v) => {
+    const stripped = v.trim();
+    if (!stripped || /[a-zA-Z]/.test(stripped)) return stripped;
+    const n = parseFloat(stripped);
+    if (isNaN(n)) return stripped;
+    return `${n}kg`;
+  };
+  const fmtAge = (v) => {
+    const digits = v.replace(/\D/g, "");
+    return digits;
+  };
+
   const handleSaveProfile = async () => {
     if (!formName.trim()) return;
     setSaving(true);
@@ -1907,11 +1948,11 @@ export default function TioJohnny() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Tarifa</label>
-                <input value={formRate} onChange={(e) => setFormRate(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="$80.000 / hr" />
+                <input value={formRate} onChange={(e) => setFormRate(e.target.value)} onBlur={() => setFormRate(fmtRate(formRate))} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="$80.000 /hr" />
               </div>
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Teléfono</label>
-                <input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="+56912345678" />
+                <input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} onBlur={() => setFormPhone(fmtPhone(formPhone))} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="+56912345678" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1921,7 +1962,7 @@ export default function TioJohnny() {
               </div>
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Instagram (opcional)</label>
-                <input value={formInstagram} onChange={(e) => setFormInstagram(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="@valentina.rojas" />
+                <input value={formInstagram} onChange={(e) => setFormInstagram(e.target.value)} onBlur={() => setFormInstagram(fmtInstagram(formInstagram))} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="@valentina.rojas" />
               </div>
             </div>
             <div>
@@ -1936,17 +1977,17 @@ export default function TioJohnny() {
               <label className="text-xs font-semibold uppercase tracking-widest mb-3 block" style={{ color: "#8B5CF6" }}>Medidas / Stats</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { val: formHeight, set: setFormHeight, label: "Altura", ph: "1.75m" },
-                  { val: formWeight, set: setFormWeight, label: "Peso", ph: "58kg" },
-                  { val: formEyes, set: setFormEyes, label: "Ojos", ph: "Café" },
-                  { val: formHair, set: setFormHair, label: "Cabello", ph: "Castaño" },
-                  { val: formAge, set: setFormAge, label: "Edad", ph: "24" },
-                  { val: formSizes, set: setFormSizes, label: "Talla", ph: "S/M" },
-                  { val: formNationality, set: setFormNationality, label: "Nacionalidad", ph: "Chilena" },
+                  { val: formHeight, set: setFormHeight, fmt: fmtHeight, label: "Altura", ph: "1.75m" },
+                  { val: formWeight, set: setFormWeight, fmt: fmtWeight, label: "Peso", ph: "58kg" },
+                  { val: formEyes, set: setFormEyes, fmt: null, label: "Ojos", ph: "Café" },
+                  { val: formHair, set: setFormHair, fmt: null, label: "Cabello", ph: "Castaño" },
+                  { val: formAge, set: setFormAge, fmt: fmtAge, label: "Edad", ph: "24" },
+                  { val: formSizes, set: setFormSizes, fmt: null, label: "Talla", ph: "S/M" },
+                  { val: formNationality, set: setFormNationality, fmt: null, label: "Nacionalidad", ph: "Chilena" },
                 ].map((s) => (
                   <div key={s.label}>
                     <label className="block mb-1" style={{ fontSize: 10, color: "#7878a0" }}>{s.label}</label>
-                    <input value={s.val} onChange={(e) => s.set(e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none text-center" style={inputStyle} placeholder={s.ph} />
+                    <input value={s.val} onChange={(e) => s.set(e.target.value)} onBlur={() => s.fmt && s.set(s.fmt(s.val))} className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none text-center" style={inputStyle} placeholder={s.ph} />
                   </div>
                 ))}
               </div>
