@@ -75,15 +75,6 @@ function generatePlaceholderSvg(id) {
 // SUPABASE HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Serve optimized photo via Supabase image transformation API
-// Converts  /storage/v1/object/public/…  →  /storage/v1/render/image/public/…?width=&quality=
-function optimizePhotoUrl(url, { width, quality = 75 } = {}) {
-  if (!url || !url.includes("/storage/v1/object/public/")) return url;
-  const base = url.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/");
-  const params = new URLSearchParams({ quality });
-  if (width) params.set("width", width);
-  return `${base}?${params}`;
-}
 
 // Upload a photo to Supabase Storage and return its public URL
 async function uploadPhoto(file, talentId) {
@@ -885,22 +876,17 @@ export default function TioJohnny() {
   }, [catDropdownOpen]);
 
   // ─── Helpers ───────────────────────────────────────────────────────────
-  // raw URL — used for lightbox full-res and canvas/PDF
   const getMainPhoto = (t) => {
     const photos = t.photos || [];
     return photos.length > 0 ? photos[0] : generatePlaceholderSvg(t.id);
   };
-  // raw URLs — used for lightbox full-res
   const getPhotos = (t) => {
     const photos = t.photos || [];
     return photos.length > 0 ? photos : [generatePlaceholderSvg(t.id)];
   };
-  // 400px thumbnail — grid cards, leaderboard rows, admin thumbnails
-  const getThumb = (t) => optimizePhotoUrl(getMainPhoto(t), { width: 400, quality: 72 });
-  // 800px — hero/carousel in profile modal
-  const getHeroPhoto = (url) => optimizePhotoUrl(url, { width: 800, quality: 80 });
-  // optimized list for carousel (800px each)
-  const getCarouselPhotos = (t) => getPhotos(t).map((u) => getHeroPhoto(u));
+  const getThumb = getMainPhoto;
+  const getHeroPhoto = (url) => url;
+  const getCarouselPhotos = (t) => getPhotos(t);
 
   const toggleFav = useCallback((id, e) => {
     e.stopPropagation();
