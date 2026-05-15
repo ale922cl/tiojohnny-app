@@ -4144,7 +4144,7 @@ export default function TioJohnny() {
                   onPointerLeave={castMode ? undefined : (e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
                   onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
                   className="grid-morph-in rounded-2xl cursor-pointer"
-                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", ...(isHeartbeat ? { boxShadow: "0 0 20px 8px rgba(244,63,94,0.45)", outline: "2px solid rgba(244,63,94,0.7)", transition: "box-shadow 0.4s ease, outline 0.4s ease" } : { transition: "box-shadow 0.4s ease, outline 0.4s ease" }) }}
+                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
