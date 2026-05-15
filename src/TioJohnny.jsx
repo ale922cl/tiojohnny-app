@@ -2807,38 +2807,38 @@ export default function TioJohnny() {
 
                 {/* Custom date range inputs */}
                 {analyticsRange === "custom" && (
-                  <div className="rounded-xl p-3 space-y-2" style={{ background: "#1e1e3a" }}>
-                    <p className="text-xs font-semibold" style={{ color: "#9898b0" }}>Selecciona rango de fechas</p>
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Desde</label>
-                        <input
-                          type="date"
-                          value={analyticsCustomFrom}
-                          onChange={(e) => setAnalyticsCustomFrom(e.target.value)}
-                          className="w-full rounded-lg px-3 py-2 text-xs text-white"
-                          style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Hasta</label>
-                        <input
-                          type="date"
-                          value={analyticsCustomTo}
-                          onChange={(e) => setAnalyticsCustomTo(e.target.value)}
-                          className="w-full rounded-lg px-3 py-2 text-xs text-white"
-                          style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
-                        />
-                      </div>
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1">
+                      <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Desde</label>
+                      <input
+                        type="date"
+                        value={analyticsCustomFrom}
+                        max={analyticsCustomTo || undefined}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAnalyticsCustomFrom(val);
+                          if (analyticsCustomTo) fetchAnalytics("custom", val, analyticsCustomTo);
+                        }}
+                        className="w-full rounded-xl px-3 py-2 text-xs text-white"
+                        style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}
+                      />
                     </div>
-                    <button
-                      onClick={() => fetchAnalytics("custom", analyticsCustomFrom, analyticsCustomTo)}
-                      disabled={!analyticsCustomFrom}
-                      className="w-full py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95"
-                      style={{ background: analyticsCustomFrom ? "#8B5CF6" : "#2a2a4a", opacity: analyticsCustomFrom ? 1 : 0.5 }}
-                    >
-                      Buscar
-                    </button>
+                    <span className="text-xs mt-4 flex-shrink-0" style={{ color: "#4a4a6a" }}>→</span>
+                    <div className="flex-1">
+                      <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Hasta</label>
+                      <input
+                        type="date"
+                        value={analyticsCustomTo}
+                        min={analyticsCustomFrom || undefined}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAnalyticsCustomTo(val);
+                          if (analyticsCustomFrom) fetchAnalytics("custom", analyticsCustomFrom, val);
+                        }}
+                        className="w-full rounded-xl px-3 py-2 text-xs text-white"
+                        style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}
+                      />
+                    </div>
                   </div>
                 )}
 
