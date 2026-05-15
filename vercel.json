@@ -1,4 +1,12 @@
 {
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "tiojohnny-app.vercel.app" }],
+      "destination": "https://tiojohnny.cl/$1",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/(.*).html",

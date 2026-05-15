@@ -440,6 +440,9 @@ export default function TioJohnny() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsRange, setAnalyticsRange] = useState("30");
+  const [analyticsCustomFrom, setAnalyticsCustomFrom] = useState("");
+  const [analyticsCustomTo, setAnalyticsCustomTo] = useState("");
   const [trendingData, setTrendingData] = useState({}); // { talentId: viewCount (last 7 days) }
   const [shareCardTalent, setShareCardTalent] = useState(null);
   const [statsCardLoading, setStatsCardLoading] = useState(null); // talent id
@@ -1323,18 +1326,25 @@ export default function TioJohnny() {
   };
 
   // ─── Analytics data fetch ──────────────────────────────────────────
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (range, customFrom, customTo) => {
+    const r = range !== undefined ? range : analyticsRange;
+    const cf = customFrom !== undefined ? customFrom : analyticsCustomFrom;
+    const ct = customTo !== undefined ? customTo : analyticsCustomTo;
     setAnalyticsLoading(true);
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const weekAgo = new Date(now - 7 * 86400000).toISOString();
     const monthAgo = new Date(now - 30 * 86400000).toISOString();
 
-    const { data: events } = await supabase
-      .from("analytics_events")
-      .select("*")
-      .gte("created_at", monthAgo)
-      .order("created_at", { ascending: false });
+    let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false });
+    if (r === "30") query = query.gte("created_at", monthAgo);
+    else if (r === "custom" && cf) {
+      query = query.gte("created_at", cf + "T00:00:00.000Z");
+      if (ct) query = query.lte("created_at", ct + "T23:59:59.999Z");
+    }
+    // r === "all": no date filter
+
+    const { data: events } = await query;
 
     if (!events) { setAnalyticsLoading(false); return; }
 
@@ -1453,7 +1463,6 @@ export default function TioJohnny() {
       topCategories,
       dailyVisitors,
       totalEvents: events.length,
-      // New metrics
       devices: { mobile: mobileCount, desktop: desktopCount },
       engagementRate,
       avgProfilesPerVisitor,
@@ -1462,6 +1471,9 @@ export default function TioJohnny() {
       contacts: { whatsapp: contactWa, call: contactCall, instagram: contactIg, total: contactWa + contactCall + contactIg },
       peakHour,
       hourCounts,
+      fetchedRange: r,
+      fetchedFrom: cf,
+      fetchedTo: ct,
     });
     setAnalyticsLoading(false);
   };
@@ -2771,27 +2783,110 @@ export default function TioJohnny() {
             )}
             {analyticsData && !analyticsLoading && (
               <div className="space-y-4">
-                {/* Refresh button */}
-                <div className="flex justify-end">
-                  <button onClick={fetchAnalytics} className="text-xs flex items-center gap-1 px-3 py-1.5 rounded-full" style={{ background: "#1e1e3a", color: "#8B5CF6" }}>
+                {/* Range selector + Refresh */}
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-1 gap-1 rounded-xl p-1" style={{ background: "#1e1e3a" }}>
+                    {[{ v: "30", label: "30 días" }, { v: "all", label: "Todo" }, { v: "custom", label: "Fechas" }].map(({ v, label }) => (
+                      <button
+                        key={v}
+                        onClick={() => {
+                          setAnalyticsRange(v);
+                          if (v !== "custom") fetchAnalytics(v, "", "");
+                        }}
+                        className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                        style={{ background: analyticsRange === v ? "#8B5CF6" : "transparent", color: analyticsRange === v ? "#fff" : "#7878a0" }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => fetchAnalytics()} className="text-xs flex items-center gap-1 px-3 py-1.5 rounded-full flex-shrink-0" style={{ background: "#1e1e3a", color: "#8B5CF6" }}>
                     <RotateCcw size={12} /> Actualizar
                   </button>
                 </div>
 
-                {/* Visitors summary */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.sessions.today} sesiones` },
-                    { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.sessions.week} sesiones` },
-                    { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones` },
-                  ].map((s) => (
-                    <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
-                      <div className="text-2xl font-bold text-white">{s.value}</div>
-                      <div className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>{s.label}</div>
-                      <div className="text-xs mt-0.5" style={{ color: "#4a4a6a" }}>{s.sub}</div>
+                {/* Custom date range inputs */}
+                {analyticsRange === "custom" && (
+                  <div className="rounded-xl p-3 space-y-2" style={{ background: "#1e1e3a" }}>
+                    <p className="text-xs font-semibold" style={{ color: "#9898b0" }}>Selecciona rango de fechas</p>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Desde</label>
+                        <input
+                          type="date"
+                          value={analyticsCustomFrom}
+                          onChange={(e) => setAnalyticsCustomFrom(e.target.value)}
+                          className="w-full rounded-lg px-3 py-2 text-xs text-white"
+                          style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Hasta</label>
+                        <input
+                          type="date"
+                          value={analyticsCustomTo}
+                          onChange={(e) => setAnalyticsCustomTo(e.target.value)}
+                          className="w-full rounded-lg px-3 py-2 text-xs text-white"
+                          style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
+                        />
+                      </div>
                     </div>
-                  ))}
-                </div>
+                    <button
+                      onClick={() => fetchAnalytics("custom", analyticsCustomFrom, analyticsCustomTo)}
+                      disabled={!analyticsCustomFrom}
+                      className="w-full py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95"
+                      style={{ background: analyticsCustomFrom ? "#8B5CF6" : "#2a2a4a", opacity: analyticsCustomFrom ? 1 : 0.5 }}
+                    >
+                      Buscar
+                    </button>
+                  </div>
+                )}
+
+                {/* Visitors summary */}
+                {analyticsData.fetchedRange === "30" && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.sessions.today} sesiones` },
+                      { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.sessions.week} sesiones` },
+                      { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones` },
+                    ].map((s) => (
+                      <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
+                        <div className="text-2xl font-bold text-white">{s.value}</div>
+                        <div className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>{s.label}</div>
+                        <div className="text-xs mt-0.5" style={{ color: "#4a4a6a" }}>{s.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {analyticsData.fetchedRange === "all" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.sessions.today} sesiones` },
+                      { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.sessions.week} sesiones` },
+                      { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones` },
+                      { label: "Total histórico", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones`, accent: true },
+                    ].map((s) => (
+                      <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: s.accent ? "rgba(139,92,246,0.15)" : "#1e1e3a", border: s.accent ? "1px solid #8B5CF6" : "none" }}>
+                        <div className="text-2xl font-bold text-white">{s.value}</div>
+                        <div className="text-xs font-semibold" style={{ color: s.accent ? "#8B5CF6" : "#8B5CF6" }}>{s.label}</div>
+                        <div className="text-xs mt-0.5" style={{ color: "#4a4a6a" }}>{s.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {analyticsData.fetchedRange === "custom" && (
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="rounded-xl p-4 text-center" style={{ background: "rgba(139,92,246,0.15)", border: "1px solid #8B5CF6" }}>
+                      <div className="text-3xl font-bold text-white">{analyticsData.visitors.month}</div>
+                      <div className="text-xs font-semibold mt-1" style={{ color: "#8B5CF6" }}>
+                        Visitantes únicos
+                      </div>
+                      <div className="text-xs mt-0.5" style={{ color: "#7878a0" }}>
+                        {analyticsData.fetchedFrom} → {analyticsData.fetchedTo || "hoy"} · {analyticsData.sessions.month} sesiones
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Engagement metrics */}
                 <div className="grid grid-cols-2 gap-2">
@@ -3048,7 +3143,11 @@ export default function TioJohnny() {
                 </div>
 
                 <p className="text-xs text-center pb-4" style={{ color: "#4a4a6a" }}>
-                  {analyticsData.totalEvents} eventos registrados (últimos 30 días)
+                  {analyticsData.totalEvents} eventos registrados ({
+                    analyticsData.fetchedRange === "all" ? "todo el tiempo" :
+                    analyticsData.fetchedRange === "custom" ? `${analyticsData.fetchedFrom} → ${analyticsData.fetchedTo || "hoy"}` :
+                    "últimos 30 días"
+                  })
                 </p>
               </div>
             )}
