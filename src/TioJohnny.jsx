@@ -75,6 +75,16 @@ function generatePlaceholderSvg(id) {
 // SUPABASE HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Serve optimized photo via Supabase image transformation API
+// Converts  /storage/v1/object/public/…  →  /storage/v1/render/image/public/…?width=&quality=
+function optimizePhotoUrl(url, { width, quality = 75 } = {}) {
+  if (!url || !url.includes("/storage/v1/object/public/")) return url;
+  const base = url.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/");
+  const params = new URLSearchParams({ quality });
+  if (width) params.set("width", width);
+  return `${base}?${params}`;
+}
+
 // Upload a photo to Supabase Storage and return its public URL
 async function uploadPhoto(file, talentId) {
   const ext = file.name.split(".").pop();
@@ -82,7 +92,7 @@ async function uploadPhoto(file, talentId) {
 
   const { data, error } = await supabase.storage
     .from("talent-photos")
-    .upload(fileName, file, { cacheControl: "3600", upsert: false });
+    .upload(fileName, file, { cacheControl: "31536000", upsert: false }); // 1 year — filenames are unique
 
   if (error) throw error;
 
@@ -875,14 +885,22 @@ export default function TioJohnny() {
   }, [catDropdownOpen]);
 
   // ─── Helpers ───────────────────────────────────────────────────────────
+  // raw URL — used for lightbox full-res and canvas/PDF
   const getMainPhoto = (t) => {
     const photos = t.photos || [];
     return photos.length > 0 ? photos[0] : generatePlaceholderSvg(t.id);
   };
+  // raw URLs — used for lightbox full-res
   const getPhotos = (t) => {
     const photos = t.photos || [];
     return photos.length > 0 ? photos : [generatePlaceholderSvg(t.id)];
   };
+  // 400px thumbnail — grid cards, leaderboard rows, admin thumbnails
+  const getThumb = (t) => optimizePhotoUrl(getMainPhoto(t), { width: 400, quality: 72 });
+  // 800px — hero/carousel in profile modal
+  const getHeroPhoto = (url) => optimizePhotoUrl(url, { width: 800, quality: 80 });
+  // optimized list for carousel (800px each)
+  const getCarouselPhotos = (t) => getPhotos(t).map((u) => getHeroPhoto(u));
 
   const toggleFav = useCallback((id, e) => {
     e.stopPropagation();
@@ -1808,6 +1826,9 @@ export default function TioJohnny() {
     // Extract ambient color from main photo
     const mainImg = getMainPhoto(t);
     if (mainImg) extractAmbientColor(mainImg);
+    // Eagerly preload first two carousel photos
+    const photos = t.photos || [];
+    photos.slice(0, 2).forEach((url) => { const i = new Image(); i.src = getHeroPhoto(url); });
     window.history.pushState(null, "", `#/${toSlug(t.name)}`);
     trackEvent("profile_view", t.id);
   }, [extractAmbientColor]);
@@ -3174,7 +3195,7 @@ export default function TioJohnny() {
                                 <div key={item.tid} className="flex items-center gap-2">
                                   <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
                                   <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0" style={{ boxShadow: `0 0 ${8 + heat * 12}px ${heatColor}44` }}>
-                                    <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                                    <img src={getThumb(t)} alt="" className="w-full h-full object-cover" />
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-xs font-semibold text-white truncate">{t.name}</p>
@@ -3222,7 +3243,7 @@ export default function TioJohnny() {
                             <div key={tid} className="flex items-center gap-2">
                               <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
                               <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
-                                <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                                <img src={getThumb(t)} alt="" className="w-full h-full object-cover" />
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-semibold text-white truncate">{t.name}</p>
@@ -3254,7 +3275,7 @@ export default function TioJohnny() {
                           <div key={tid} className="flex items-center gap-2">
                             <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
                             <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
-                              <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                              <img src={getThumb(t)} alt="" className="w-full h-full object-cover" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold text-white truncate">{t.name}</p>
@@ -3532,7 +3553,7 @@ export default function TioJohnny() {
                 </button>
               </div>
               <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
-                <img src={getMainPhoto(t)} alt={t.name} className="w-full h-full object-cover" />
+                <img src={getThumb(t)} alt={t.name} className="w-full h-full object-cover" />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-bold text-white truncate">{t.name}</h3>
@@ -3594,7 +3615,7 @@ export default function TioJohnny() {
             {archivedTalents.map((t) => (
               <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "#1e1e3a", opacity: 0.7 }}>
                 <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
-                  <img src={getMainPhoto(t)} alt={t.name} className="w-full h-full object-cover" />
+                  <img src={getThumb(t)} alt={t.name} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-bold text-white truncate">{t.name}</h3>
@@ -3665,14 +3686,20 @@ export default function TioJohnny() {
   const renderDetail = () => {
     if (!selectedTalent) return null;
     const t = selectedTalent;
-    const images = getPhotos(t);
+    const images = getCarouselPhotos(t);      // 800px optimized for hero/carousel
+    const rawImages = getPhotos(t);           // full-res for lightbox
     const imgCount = images.length;
     const experienceList = (t.experience || "").split("\n").filter(Boolean);
 
     const goToPhoto = (newIndex) => {
       setCarouselIndex(newIndex);
       setCarouselKey((k) => k + 1);
-      if (images[newIndex]) extractAmbientColor(images[newIndex]);
+      if (rawImages[newIndex]) extractAmbientColor(rawImages[newIndex]);
+      // Preload adjacent images
+      [-1, 1].forEach((d) => {
+        const idx = (newIndex + d + imgCount) % imgCount;
+        if (idx !== newIndex) { const img = new Image(); img.src = images[idx]; }
+      });
     };
 
     return (
@@ -3875,7 +3902,7 @@ export default function TioJohnny() {
           {/* Photo */}
           <img
             key={lightboxIndex}
-            src={images[lightboxIndex]}
+            src={rawImages[lightboxIndex]}
             alt=""
             className="lightbox-zoom"
             style={{ maxWidth: "100vw", maxHeight: "100vh", objectFit: "contain", userSelect: "none", position: "relative" }}
@@ -3964,7 +3991,7 @@ export default function TioJohnny() {
                     style={{ borderBottom: "1px solid #2a2a4a" }}
                   >
                     <div className="w-9 h-9 rounded-lg overflow-hidden flex-shrink-0">
-                      <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                      <img src={getThumb(t)} alt="" className="w-full h-full object-cover" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-white truncate">{t.name}</p>
@@ -4237,7 +4264,7 @@ export default function TioJohnny() {
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
-                    <img src={getMainPhoto(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
+                    <img src={getThumb(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     {castMode && (
                       <div className="absolute inset-0 flex items-center justify-center" style={{ background: castSelected.has(t.id) ? "rgba(139,92,246,0.5)" : "transparent", transition: "background 0.15s", zIndex: 3 }}>
@@ -4301,13 +4328,13 @@ export default function TioJohnny() {
                 {/* 3rd card (hint) */}
                 {swipeIndex + 2 < filtered.length && (
                   <div ref={swipeThirdRef} className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: "scale(0.86) translateY(24px)", opacity: 0.25, background: "#1e1e3a", zIndex: 1 }}>
-                    <img src={getMainPhoto(filtered[swipeIndex + 2])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top", filter: "blur(2px) brightness(0.5)" }} />
+                    <img src={getThumb(filtered[swipeIndex + 2])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top", filter: "blur(2px) brightness(0.5)" }} />
                   </div>
                 )}
                 {/* 2nd card (next) */}
                 {swipeIndex + 1 < filtered.length && (
                   <div ref={swipeBackRef} className="absolute inset-0 rounded-3xl overflow-hidden" style={{ transform: "scale(0.93) translateY(12px)", opacity: 0.5, background: "#1e1e3a", zIndex: 2 }}>
-                    <img src={getMainPhoto(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+                    <img src={getThumb(filtered[swipeIndex + 1])} alt="" className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 30%, rgba(18,18,42,0.95) 100%)" }} />
                     <div className="absolute bottom-0 left-0 right-0 p-5">
                       <h2 className="text-xl font-bold text-white">{filtered[swipeIndex + 1].name}</h2>
@@ -4331,7 +4358,7 @@ export default function TioJohnny() {
                   onMouseDown={handleSwipeMouseDown}
                 >
                   <img
-                    src={getMainPhoto(filtered[swipeIndex])}
+                    src={getThumb(filtered[swipeIndex])}
                     alt={filtered[swipeIndex].name}
                     className="w-full h-full object-cover pointer-events-none"
                     style={{ objectPosition: "top" }}
@@ -4461,7 +4488,7 @@ export default function TioJohnny() {
             {/* Photo */}
             <div className="relative" style={{ width: "75vw", maxWidth: 380, animation: "spotlightImgIn 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s both" }}>
               <div className="rounded-3xl overflow-hidden" style={{ aspectRatio: "3/4", boxShadow: "0 0 80px rgba(139,92,246,0.2), 0 20px 60px rgba(0,0,0,0.5)" }}>
-                <img src={getMainPhoto(st)} alt={st.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
+                <img src={getThumb(st)} alt={st.name} className="w-full h-full object-cover" style={{ objectPosition: "top" }} />
               </div>
             </div>
             {/* Name + info */}
