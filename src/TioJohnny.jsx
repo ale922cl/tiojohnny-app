@@ -324,90 +324,86 @@ function santiagoStartOf(daysBack = 0) {
   return santiagoDateToUTC(dateStr, "start");
 }
 
-// Simple touch-friendly calendar range picker
 const MONTHS_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const DAYS_ES = ["Do","Lu","Ma","Mi","Ju","Vi","Sá"];
 
-function MiniCalendar({ from, to, onSelect }) {
+function DatePicker({ label, value, onChange, maxDate }) {
+  const [open, setOpen] = useState(false);
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
-  const initDate = from ? new Date(from + "T12:00:00Z") : new Date();
-  const [viewYear, setViewYear] = useState(initDate.getFullYear());
-  const [viewMonth, setViewMonth] = useState(initDate.getMonth());
-  const [picking, setPicking] = useState(from && to ? "from" : from ? "to" : "from");
+  const init = value ? new Date(value + "T12:00:00Z") : new Date();
+  const [viewYear, setViewYear] = useState(init.getFullYear());
+  const [viewMonth, setViewMonth] = useState(init.getMonth());
 
   const firstDow = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-
   const fmt = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const prevMonth = () => viewMonth === 0 ? (setViewYear(y => y - 1), setViewMonth(11)) : setViewMonth(m => m - 1);
+  const nextMonth = () => viewMonth === 11 ? (setViewYear(y => y + 1), setViewMonth(0)) : setViewMonth(m => m + 1);
 
-  const prevMonth = () => { if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); } else setViewMonth(m => m - 1); };
-  const nextMonth = () => { if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); } else setViewMonth(m => m + 1); };
+  const handleDay = (dayStr) => { onChange(dayStr); setOpen(false); };
 
-  const handleDay = (dayStr) => {
-    if (picking === "from") {
-      onSelect(dayStr, "");
-      setPicking("to");
-    } else {
-      if (dayStr < from) { onSelect(dayStr, from); }
-      else { onSelect(from, dayStr); }
-      setPicking("from");
-    }
-  };
+  const displayDate = value
+    ? new Date(value + "T12:00:00Z").toLocaleDateString("es-CL", { day: "numeric", month: "short", year: "numeric" })
+    : null;
 
   return (
-    <div className="rounded-2xl p-3" style={{ background: "#1e1e3a" }}>
-      <div className="flex items-center justify-between mb-3">
-        <button onClick={prevMonth} className="p-1.5 rounded-lg active:scale-90" style={{ background: "#12122a" }}>
-          <ChevronLeft size={14} color="#8B5CF6" />
-        </button>
-        <span className="text-sm font-bold text-white">{MONTHS_ES[viewMonth]} {viewYear}</span>
-        <button onClick={nextMonth} className="p-1.5 rounded-lg active:scale-90" style={{ background: "#12122a" }}>
-          <ChevronRight size={14} color="#8B5CF6" />
-        </button>
-      </div>
-      <div className="grid grid-cols-7 mb-1">
-        {DAYS_ES.map(d => <div key={d} className="text-center" style={{ fontSize: 10, color: "#4a4a6a" }}>{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7 gap-0.5">
-        {Array(firstDow).fill(null).map((_, i) => <div key={`e${i}`} />)}
-        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-          const dayStr = fmt(viewYear, viewMonth, day);
-          const isFrom = dayStr === from;
-          const isTo = dayStr === to;
-          const inRange = from && to && dayStr > from && dayStr < to;
-          const isToday = dayStr === todayStr;
-          const isFuture = dayStr > todayStr;
-          return (
-            <button
-              key={day}
-              onClick={() => !isFuture && handleDay(dayStr)}
-              className="flex items-center justify-center rounded-lg transition-all active:scale-90"
-              style={{
-                aspectRatio: "1",
-                fontSize: 12,
-                background: isFrom || isTo ? "#8B5CF6" : inRange ? "rgba(139,92,246,0.25)" : "transparent",
-                color: isFuture ? "#2a2a4a" : isFrom || isTo ? "#fff" : isToday ? "#8B5CF6" : "#d4d4f0",
-                fontWeight: isFrom || isTo || isToday ? "bold" : "normal",
-                cursor: isFuture ? "default" : "pointer",
-              }}
-            >
-              {day}
+    <div className="flex-1">
+      <p className="text-xs mb-1.5 font-semibold" style={{ color: "#7878a0" }}>{label}</p>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-all active:scale-95"
+        style={{ background: open ? "rgba(139,92,246,0.15)" : "#1e1e3a", border: `1.5px solid ${open ? "#8B5CF6" : value ? "rgba(139,92,246,0.4)" : "#2a2a4a"}`, color: value ? "#e2e2f0" : "#4a4a6a" }}
+      >
+        <span>{displayDate || "Seleccionar"}</span>
+        <ChevronDown size={14} color={open ? "#8B5CF6" : "#4a4a6a"} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+      </button>
+
+      {open && (
+        <div className="mt-1.5 rounded-2xl p-3 z-10" style={{ background: "#12122a", border: "1px solid #2a2a4a" }}>
+          <div className="flex items-center justify-between mb-2">
+            <button onClick={prevMonth} className="p-1.5 rounded-lg active:scale-90" style={{ background: "#1e1e3a" }}>
+              <ChevronLeft size={14} color="#8B5CF6" />
             </button>
-          );
-        })}
-      </div>
-      <div className="mt-3 flex items-center justify-between">
-        <p className="text-xs" style={{ color: "#7878a0" }}>
-          {picking === "from"
-            ? (from && to ? `${from} → ${to}` : "Elige fecha inicio")
-            : `Desde ${from} → elige fin`}
-        </p>
-        {(from || to) && (
-          <button onClick={() => { onSelect("", ""); setPicking("from"); }} className="text-xs" style={{ color: "#f43f5e" }}>
-            Limpiar
-          </button>
-        )}
-      </div>
+            <span className="text-xs font-bold text-white">{MONTHS_ES[viewMonth]} {viewYear}</span>
+            <button onClick={nextMonth} className="p-1.5 rounded-lg active:scale-90" style={{ background: "#1e1e3a" }}>
+              <ChevronRight size={14} color="#8B5CF6" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 mb-1">
+            {DAYS_ES.map(d => <div key={d} className="text-center" style={{ fontSize: 9, color: "#4a4a6a" }}>{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {Array(firstDow).fill(null).map((_, i) => <div key={`e${i}`} />)}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+              const dayStr = fmt(viewYear, viewMonth, day);
+              const isSelected = dayStr === value;
+              const isToday = dayStr === todayStr;
+              const disabled = dayStr > todayStr || (maxDate && dayStr > maxDate);
+              return (
+                <button
+                  key={day}
+                  onClick={() => !disabled && handleDay(dayStr)}
+                  className="flex items-center justify-center rounded-lg active:scale-90"
+                  style={{
+                    aspectRatio: "1", fontSize: 12,
+                    background: isSelected ? "#8B5CF6" : "transparent",
+                    color: disabled ? "#2a2a4a" : isSelected ? "#fff" : isToday ? "#8B5CF6" : "#d4d4f0",
+                    fontWeight: isSelected || isToday ? "bold" : "normal",
+                    cursor: disabled ? "default" : "pointer",
+                  }}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+          {value && (
+            <button onClick={() => { onChange(""); setOpen(false); }} className="mt-2 w-full text-xs py-1" style={{ color: "#f43f5e" }}>
+              Limpiar
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2913,15 +2909,25 @@ export default function TioJohnny() {
 
                 {/* Custom date range calendar */}
                 {analyticsRange === "custom" && (
-                  <MiniCalendar
-                    from={analyticsCustomFrom}
-                    to={analyticsCustomTo}
-                    onSelect={(from, to) => {
-                      setAnalyticsCustomFrom(from);
-                      setAnalyticsCustomTo(to);
-                      if (from && to) fetchAnalytics("custom", from, to);
-                    }}
-                  />
+                  <div className="flex gap-3">
+                    <DatePicker
+                      label="Desde"
+                      value={analyticsCustomFrom}
+                      maxDate={analyticsCustomTo || undefined}
+                      onChange={(val) => {
+                        setAnalyticsCustomFrom(val);
+                        if (analyticsCustomTo) fetchAnalytics("custom", val, analyticsCustomTo);
+                      }}
+                    />
+                    <DatePicker
+                      label="Hasta"
+                      value={analyticsCustomTo}
+                      onChange={(val) => {
+                        setAnalyticsCustomTo(val);
+                        if (analyticsCustomFrom) fetchAnalytics("custom", analyticsCustomFrom, val);
+                      }}
+                    />
+                  </div>
                 )}
 
                 {/* Visitors summary */}
