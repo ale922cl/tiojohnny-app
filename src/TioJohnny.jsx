@@ -1437,6 +1437,7 @@ export default function TioJohnny() {
     const cf = customFrom !== undefined ? customFrom : analyticsCustomFrom;
     const ct = customTo !== undefined ? customTo : analyticsCustomTo;
     setAnalyticsLoading(true);
+    const now = new Date();
     const todayStart = santiagoStartOf(0);
     const weekAgo   = santiagoStartOf(7);
     const monthAgo  = santiagoStartOf(30);
