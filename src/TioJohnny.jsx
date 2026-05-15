@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download, Image as ImageIcon,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download, Image as ImageIcon, ZoomIn,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
@@ -1833,11 +1833,27 @@ export default function TioJohnny() {
   // Long-press detection for spotlight mode
   const longPressTimerRef = useRef(null);
   const didLongPressRef = useRef(false);
+  const lastTapRef = useRef(null);   // for double-tap-to-favorite
+  const openTimerRef = useRef(null); // delayed open after single tap
+  const heroTouchX = useRef(null);   // carousel swipe touch tracking
   const makeLongPress = (t) => ({
     onPointerDown: () => { if (castMode) return; didLongPressRef.current = false; longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400); },
-    onPointerUp: () => { clearTimeout(longPressTimerRef.current); if (!didLongPressRef.current && !castMode) openProfile(t); },
-    onPointerLeave: () => { clearTimeout(longPressTimerRef.current); },
-    onPointerCancel: () => { clearTimeout(longPressTimerRef.current); },
+    onPointerUp: (e) => {
+      clearTimeout(longPressTimerRef.current);
+      if (didLongPressRef.current || castMode) return;
+      const now = Date.now();
+      if (lastTapRef.current?.id === t.id && now - lastTapRef.current.time < 320) {
+        // Double tap — favorite without opening
+        clearTimeout(openTimerRef.current);
+        lastTapRef.current = null;
+        toggleFav(t.id, e);
+      } else {
+        lastTapRef.current = { id: t.id, time: now };
+        openTimerRef.current = setTimeout(() => { lastTapRef.current = null; openProfile(t); }, 260);
+      }
+    },
+    onPointerLeave: () => { clearTimeout(longPressTimerRef.current); clearTimeout(openTimerRef.current); lastTapRef.current = null; },
+    onPointerCancel: () => { clearTimeout(longPressTimerRef.current); clearTimeout(openTimerRef.current); lastTapRef.current = null; },
   });
   const swipeCardRef = useRef(null);
   const swipeBackRef = useRef(null);
@@ -3648,7 +3664,19 @@ export default function TioJohnny() {
 
         <div ref={profileScrollRef} className="flex-1 overflow-y-auto" onScroll={handleProfileScroll} style={{ position: "relative", zIndex: 1 }}>
           {/* ── Hero image with parallax + blur reveal + crossfade ── */}
-          <div ref={profileHeroRef} className="relative w-full overflow-hidden" style={{ height: "55vh", minHeight: 300 }}>
+          <div
+            ref={profileHeroRef}
+            className="relative w-full overflow-hidden"
+            style={{ height: "55vh", minHeight: 300 }}
+            onTouchStart={(e) => { if (imgCount > 1) heroTouchX.current = e.touches[0].clientX; }}
+            onTouchEnd={(e) => {
+              if (heroTouchX.current === null || imgCount <= 1) return;
+              const dx = e.changedTouches[0].clientX - heroTouchX.current;
+              heroTouchX.current = null;
+              if (Math.abs(dx) < 40) return;
+              goToPhoto(dx < 0 ? (carouselIndex + 1) % imgCount : (carouselIndex - 1 + imgCount) % imgCount);
+            }}
+          >
             <img
               key={`hero-${carouselKey}`}
               src={images[carouselIndex]}
@@ -3661,6 +3689,11 @@ export default function TioJohnny() {
               style={{ background: "linear-gradient(to bottom, transparent 40%, #12122a 100%)", cursor: "zoom-in" }}
               onClick={() => setLightboxIndex(carouselIndex)}
             />
+            {/* Tap to zoom hint */}
+            <div className="absolute bottom-14 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-full pointer-events-none" style={{ background: "rgba(0,0,0,0.55)", zIndex: 4, backdropFilter: "blur(4px)" }}>
+              <ZoomIn size={11} color="#fff" />
+              <span style={{ fontSize: 10, color: "#fff", fontWeight: 600 }}>Toca para ver completo</span>
+            </div>
             <div className="absolute top-4 right-4 flex gap-2" style={{ zIndex: 5 }}>
               <button onClick={(e) => handleShare(t, e)} className="p-2 rounded-full" style={{ background: "rgba(0,0,0,0.5)" }}>
                 {shareConfirm === t.id ? <Check size={22} color="#22c55e" /> : <Share2 size={22} color="#fff" />}
@@ -3807,6 +3840,17 @@ export default function TioJohnny() {
         >
           {/* Ambient glow behind photo */}
           <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at 50% 50%, ${ambientColor} 0%, transparent 70%)` }} />
+
+          {/* Swipe hint — plays once when lightbox opens, fades away */}
+          {imgCount > 1 && (
+            <div className="swipe-tutorial-hand absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 20 }}>
+              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl" style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(8px)" }}>
+                <ChevronLeft size={20} color="#fff" />
+                <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>Desliza para ver más</span>
+                <ChevronRight size={20} color="#fff" />
+              </div>
+            </div>
+          )}
 
           {/* Photo */}
           <img
