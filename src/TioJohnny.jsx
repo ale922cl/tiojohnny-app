@@ -3778,7 +3778,6 @@ export default function TioJohnny() {
         </div>
       </div>
       </div>
-      </div>
 
       {/* ── Lightbox: full-screen photo viewer ── */}
       {lightboxIndex !== null && (
@@ -3859,6 +3858,7 @@ export default function TioJohnny() {
           )}
         </div>
       )}
+      </div>{/* close outer backdrop */}
       </>
     );
   };
