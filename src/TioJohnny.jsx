@@ -306,6 +306,112 @@ const ANIM_CSS = `
 .badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
 `;
 
+// Returns UTC ISO string for start/end of a date string ("YYYY-MM-DD") in Santiago timezone
+function santiagoDateToUTC(dateStr, boundary = "start") {
+  const noon = new Date(dateStr + "T12:00:00Z");
+  const santiagoHour = +new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Santiago", hour: "numeric", hour12: false,
+  }).format(noon);
+  const offsetHours = santiagoHour - 12; // negative for Santiago (UTC-3 / UTC-4)
+  const base = boundary === "start" ? "T00:00:00Z" : "T23:59:59Z";
+  return new Date(new Date(dateStr + base).getTime() - offsetHours * 3600000).toISOString();
+}
+
+// Returns UTC ISO string for start of a day N days ago in Santiago timezone
+function santiagoStartOf(daysBack = 0) {
+  const d = new Date(Date.now() - daysBack * 86400000);
+  const dateStr = d.toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+  return santiagoDateToUTC(dateStr, "start");
+}
+
+// Simple touch-friendly calendar range picker
+const MONTHS_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DAYS_ES = ["Do","Lu","Ma","Mi","Ju","Vi","Sá"];
+
+function MiniCalendar({ from, to, onSelect }) {
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+  const initDate = from ? new Date(from + "T12:00:00Z") : new Date();
+  const [viewYear, setViewYear] = useState(initDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initDate.getMonth());
+  const [picking, setPicking] = useState(from && to ? "from" : from ? "to" : "from");
+
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+  const fmt = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  const prevMonth = () => { if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); } else setViewMonth(m => m - 1); };
+  const nextMonth = () => { if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); } else setViewMonth(m => m + 1); };
+
+  const handleDay = (dayStr) => {
+    if (picking === "from") {
+      onSelect(dayStr, "");
+      setPicking("to");
+    } else {
+      if (dayStr < from) { onSelect(dayStr, from); }
+      else { onSelect(from, dayStr); }
+      setPicking("from");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl p-3" style={{ background: "#1e1e3a" }}>
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={prevMonth} className="p-1.5 rounded-lg active:scale-90" style={{ background: "#12122a" }}>
+          <ChevronLeft size={14} color="#8B5CF6" />
+        </button>
+        <span className="text-sm font-bold text-white">{MONTHS_ES[viewMonth]} {viewYear}</span>
+        <button onClick={nextMonth} className="p-1.5 rounded-lg active:scale-90" style={{ background: "#12122a" }}>
+          <ChevronRight size={14} color="#8B5CF6" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS_ES.map(d => <div key={d} className="text-center" style={{ fontSize: 10, color: "#4a4a6a" }}>{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {Array(firstDow).fill(null).map((_, i) => <div key={`e${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+          const dayStr = fmt(viewYear, viewMonth, day);
+          const isFrom = dayStr === from;
+          const isTo = dayStr === to;
+          const inRange = from && to && dayStr > from && dayStr < to;
+          const isToday = dayStr === todayStr;
+          const isFuture = dayStr > todayStr;
+          return (
+            <button
+              key={day}
+              onClick={() => !isFuture && handleDay(dayStr)}
+              className="flex items-center justify-center rounded-lg transition-all active:scale-90"
+              style={{
+                aspectRatio: "1",
+                fontSize: 12,
+                background: isFrom || isTo ? "#8B5CF6" : inRange ? "rgba(139,92,246,0.25)" : "transparent",
+                color: isFuture ? "#2a2a4a" : isFrom || isTo ? "#fff" : isToday ? "#8B5CF6" : "#d4d4f0",
+                fontWeight: isFrom || isTo || isToday ? "bold" : "normal",
+                cursor: isFuture ? "default" : "pointer",
+              }}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex items-center justify-between">
+        <p className="text-xs" style={{ color: "#7878a0" }}>
+          {picking === "from"
+            ? (from && to ? `${from} → ${to}` : "Elige fecha inicio")
+            : `Desde ${from} → elige fin`}
+        </p>
+        {(from || to) && (
+          <button onClick={() => { onSelect("", ""); setPicking("from"); }} className="text-xs" style={{ color: "#f43f5e" }}>
+            Limpiar
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -1331,16 +1437,15 @@ export default function TioJohnny() {
     const cf = customFrom !== undefined ? customFrom : analyticsCustomFrom;
     const ct = customTo !== undefined ? customTo : analyticsCustomTo;
     setAnalyticsLoading(true);
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const weekAgo = new Date(now - 7 * 86400000).toISOString();
-    const monthAgo = new Date(now - 30 * 86400000).toISOString();
+    const todayStart = santiagoStartOf(0);
+    const weekAgo   = santiagoStartOf(7);
+    const monthAgo  = santiagoStartOf(30);
 
     let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false });
     if (r === "30") query = query.gte("created_at", monthAgo);
     else if (r === "custom" && cf) {
-      query = query.gte("created_at", cf + "T00:00:00.000Z");
-      if (ct) query = query.lte("created_at", ct + "T23:59:59.999Z");
+      query = query.gte("created_at", santiagoDateToUTC(cf, "start"));
+      if (ct) query = query.lte("created_at", santiagoDateToUTC(ct, "end"));
     }
     // r === "all": no date filter
 
@@ -2805,41 +2910,17 @@ export default function TioJohnny() {
                   </button>
                 </div>
 
-                {/* Custom date range inputs */}
+                {/* Custom date range calendar */}
                 {analyticsRange === "custom" && (
-                  <div className="flex gap-2 items-center">
-                    <div className="flex-1">
-                      <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Desde</label>
-                      <input
-                        type="date"
-                        value={analyticsCustomFrom}
-                        max={analyticsCustomTo || undefined}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setAnalyticsCustomFrom(val);
-                          if (analyticsCustomTo) fetchAnalytics("custom", val, analyticsCustomTo);
-                        }}
-                        className="w-full rounded-xl px-3 py-2 text-xs text-white"
-                        style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}
-                      />
-                    </div>
-                    <span className="text-xs mt-4 flex-shrink-0" style={{ color: "#4a4a6a" }}>→</span>
-                    <div className="flex-1">
-                      <label className="text-xs mb-1 block" style={{ color: "#7878a0" }}>Hasta</label>
-                      <input
-                        type="date"
-                        value={analyticsCustomTo}
-                        min={analyticsCustomFrom || undefined}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setAnalyticsCustomTo(val);
-                          if (analyticsCustomFrom) fetchAnalytics("custom", analyticsCustomFrom, val);
-                        }}
-                        className="w-full rounded-xl px-3 py-2 text-xs text-white"
-                        style={{ background: "#1e1e3a", border: "1px solid #2a2a4a" }}
-                      />
-                    </div>
-                  </div>
+                  <MiniCalendar
+                    from={analyticsCustomFrom}
+                    to={analyticsCustomTo}
+                    onSelect={(from, to) => {
+                      setAnalyticsCustomFrom(from);
+                      setAnalyticsCustomTo(to);
+                      if (from && to) fetchAnalytics("custom", from, to);
+                    }}
+                  />
                 )}
 
                 {/* Visitors summary */}
