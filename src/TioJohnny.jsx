@@ -442,6 +442,8 @@ export default function TioJohnny() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [trendingData, setTrendingData] = useState({}); // { talentId: viewCount (last 7 days) }
   const [shareCardTalent, setShareCardTalent] = useState(null);
+  const [statsCardLoading, setStatsCardLoading] = useState(null); // talent id
+  const [statsCardToast, setStatsCardToast] = useState(null);     // talent object
 
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
@@ -1462,6 +1464,144 @@ export default function TioJohnny() {
       hourCounts,
     });
     setAnalyticsLoading(false);
+  };
+
+  // ─── Stats card generator (per-talent WhatsApp image) ─────────────
+  const generateStatsCard = async (t) => {
+    setStatsCardLoading(t.id);
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    const [{ count: totalViews }, { count: favCount }, { count: contactCount }, { count: weekViewsCount }] = await Promise.all([
+      supabase.from("analytics_events").select("*", { count: "exact", head: true }).eq("event_type", "profile_view").eq("talent_id", t.id),
+      supabase.from("analytics_events").select("*", { count: "exact", head: true }).in("event_type", ["favorite", "swipe_like"]).eq("talent_id", t.id),
+      supabase.from("analytics_events").select("*", { count: "exact", head: true }).in("event_type", ["contact_whatsapp", "contact_call", "contact_instagram"]).eq("talent_id", t.id),
+      supabase.from("analytics_events").select("*", { count: "exact", head: true }).eq("event_type", "profile_view").eq("talent_id", t.id).gte("created_at", weekAgo),
+    ]);
+    const wv = weekViewsCount || 0;
+    const weekRank = Object.entries(trendingData).filter(([, v]) => v > wv).length + 1;
+    const total = activeTalents.length;
+
+    const W = 800, H = 960;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    const rr = (x, y, w, h, r, fill) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fillStyle = fill; ctx.fill();
+    };
+
+    // Background
+    ctx.fillStyle = "#12122a"; ctx.fillRect(0, 0, W, H);
+
+    // Header gradient band
+    const hg = ctx.createLinearGradient(0, 0, W, 0);
+    hg.addColorStop(0, "#1a0a3e"); hg.addColorStop(0.5, "#2d1b69"); hg.addColorStop(1, "#1a0a3e");
+    ctx.fillStyle = hg; ctx.fillRect(0, 0, W, 110);
+
+    // Wordmark
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "bold 38px Arial";
+    ctx.fillStyle = "#8B5CF6"; ctx.textAlign = "left";
+    ctx.fillText("Tio", 44, 70);
+    const tw = ctx.measureText("Tio").width;
+    ctx.fillStyle = "#e2e2f0";
+    ctx.fillText("Johnny", 44 + tw, 70);
+    const jw = ctx.measureText("Johnny").width;
+    ctx.font = "bold 24px Arial"; ctx.fillStyle = "#5a5a7a";
+    ctx.fillText(".cl", 44 + tw + jw, 70);
+    ctx.font = "16px Arial"; ctx.fillStyle = "#7878a0"; ctx.textAlign = "right";
+    ctx.fillText("Reporte semanal", W - 44, 70);
+
+    // Circular photo
+    const PR = 84, PX = W / 2, PY = 230;
+    ctx.beginPath(); ctx.arc(PX, PY, PR + 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#8B5CF6"; ctx.fill();
+    const photoUrl = getMainPhoto(t);
+    await new Promise((res) => {
+      const img = new Image(); img.crossOrigin = "anonymous";
+      img.onload = () => {
+        ctx.save(); ctx.beginPath(); ctx.arc(PX, PY, PR, 0, Math.PI * 2); ctx.clip();
+        const sc = Math.max((PR * 2) / img.width, (PR * 2) / img.height);
+        const sw = (PR * 2) / sc, sh = (PR * 2) / sc;
+        ctx.drawImage(img, (img.width - sw) / 2, 0, sw, sh, PX - PR, PY - PR, PR * 2, PR * 2);
+        ctx.restore(); res();
+      };
+      img.onerror = res; img.src = photoUrl;
+    });
+
+    // Name + specialty
+    ctx.font = "bold 34px Arial"; ctx.fillStyle = "#ffffff"; ctx.textAlign = "center";
+    ctx.fillText(t.name, W / 2, PY + PR + 46);
+    if (t.specialty) { ctx.font = "20px Arial"; ctx.fillStyle = "#8B5CF6"; ctx.fillText(t.specialty, W / 2, PY + PR + 76); }
+
+    // Divider
+    ctx.strokeStyle = "rgba(139,92,246,0.25)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(44, 400); ctx.lineTo(W - 44, 400); ctx.stroke();
+    ctx.font = "bold 13px Arial"; ctx.fillStyle = "#5a5a7a"; ctx.textAlign = "center";
+    ctx.fillText("ESTA SEMANA", W / 2, 424);
+
+    // 3 stat tiles
+    const tiles = [
+      { v: wv, label: "Vistas", emoji: "👁" },
+      { v: favCount || 0, label: "Favoritas", emoji: "❤️" },
+      { v: contactCount || 0, label: "Contactos", emoji: "💬" },
+    ];
+    const tW = 210, tH = 118, gap = (W - 88 - tW * 3) / 2;
+    tiles.forEach((tile, i) => {
+      const tx = 44 + i * (tW + gap);
+      rr(tx, 440, tW, tH, 18, "#1e1e3a");
+      ctx.font = "28px Arial"; ctx.textAlign = "center";
+      ctx.fillText(tile.emoji, tx + tW / 2, 484);
+      ctx.font = "bold 32px Arial"; ctx.fillStyle = "#8B5CF6";
+      ctx.fillText(String(tile.v), tx + tW / 2, 524);
+      ctx.font = "14px Arial"; ctx.fillStyle = "#7878a0";
+      ctx.fillText(tile.label, tx + tW / 2, 548);
+    });
+
+    // Ranking tile
+    rr(44, 580, W - 88, 82, 18, "#1e1e3a");
+    ctx.font = "bold 16px Arial"; ctx.fillStyle = "#7878a0"; ctx.textAlign = "left";
+    ctx.fillText("Ranking esta semana", 80, 608);
+    ctx.font = "bold 26px Arial"; ctx.fillStyle = wv > 0 ? "#fb923c" : "#4a4a6a"; ctx.textAlign = "right";
+    ctx.fillText(wv > 0 ? `🔥 #${weekRank} de ${total}` : "Sin vistas aún", W - 80, 646);
+
+    // Total historical tile
+    rr(44, 682, W - 88, 72, 18, "#1e1e3a");
+    ctx.font = "16px Arial"; ctx.fillStyle = "#7878a0"; ctx.textAlign = "left";
+    ctx.fillText("Total histórico", 80, 706);
+    ctx.font = "bold 24px Arial"; ctx.fillStyle = "#e2e2f0";
+    ctx.fillText(`${totalViews || 0} vistas en total`, 80, 738);
+
+    // Motivational quote
+    ctx.font = "italic 19px Arial"; ctx.fillStyle = "#7878a0"; ctx.textAlign = "center";
+    const quote = wv >= 5 ? "¡Tu perfil está generando resultados increíbles! 🚀"
+      : wv >= 2 ? "Tu perfil está creciendo semana a semana ✨"
+      : "Sigue activa — tu audiencia te está esperando 💜";
+    ctx.fillText(quote, W / 2, 800);
+
+    // Footer
+    ctx.fillStyle = "#0d0d1e"; ctx.fillRect(0, H - 100, W, 100);
+    ctx.font = "14px Arial"; ctx.fillStyle = "#5a5a7a"; ctx.textAlign = "center";
+    ctx.fillText("El catálogo de talentos para eventos", W / 2, H - 62);
+    ctx.font = "bold 24px Arial"; ctx.fillStyle = "#8B5CF6";
+    ctx.fillText("tiojohnny.cl", W / 2, H - 28);
+
+    const link = document.createElement("a");
+    link.download = `stats-${toSlug(t.name)}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+
+    setStatsCardLoading(null);
+    if (t.phone) { setStatsCardToast(t); setTimeout(() => setStatsCardToast(null), 7000); }
   };
 
   // ─── Heatmap / Attention Map data ──────────────────────────────────
@@ -3174,6 +3314,17 @@ export default function TioJohnny() {
                 <button onClick={() => openEditor(t)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }}>
                   <Edit3 size={16} color="#8B5CF6" />
                 </button>
+                <button
+                  onClick={() => generateStatsCard(t)}
+                  disabled={statsCardLoading === t.id}
+                  className="p-2 rounded-xl transition-all active:scale-90"
+                  style={{ background: "#2a2a4a" }}
+                  title="Generar tarjeta de stats"
+                >
+                  {statsCardLoading === t.id
+                    ? <Loader2 size={16} color="#8B5CF6" className="animate-spin" />
+                    : <TrendingUp size={16} color="#8B5CF6" />}
+                </button>
                 <button onClick={() => handleArchive(t.id, true)} className="p-2 rounded-xl transition-all active:scale-90" style={{ background: "#2a2a4a" }} title="Archivar">
                   <Archive size={16} color="#f59e0b" />
                 </button>
@@ -3233,6 +3384,42 @@ export default function TioJohnny() {
           </div>
         )}
         </>)}
+
+        {/* ── Stats Card WhatsApp Toast ── */}
+        {statsCardToast && (
+          <div
+            className="fixed bottom-6 left-4 right-4 z-50 rounded-2xl p-4 flex items-start gap-3"
+            style={{ background: "#1e1e3a", border: "1px solid #8B5CF6", boxShadow: "0 8px 32px rgba(139,92,246,0.3)" }}
+          >
+            <TrendingUp size={20} color="#8B5CF6" className="flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-white">Tarjeta descargada</p>
+              <p className="text-xs mt-0.5" style={{ color: "#9898b0" }}>
+                ¿Enviarla a {statsCardToast.name.split(" ")[0]} por WhatsApp?
+              </p>
+              <div className="flex gap-2 mt-3">
+                <a
+                  href={`https://wa.me/${(statsCardToast.phone || "").replace(/\D/g, "")}?text=${encodeURIComponent(`Hola ${statsCardToast.name.split(" ")[0]}! 🌟 Te mandamos tu tarjeta de estadísticas de TioJohnny.cl. ¡Ya la tienes en tu descarga!`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 py-2 rounded-xl text-xs font-bold text-white text-center flex items-center justify-center gap-1.5 transition-transform active:scale-95"
+                  style={{ background: "#25D366" }}
+                  onClick={() => setStatsCardToast(null)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                  Enviar por WhatsApp
+                </a>
+                <button
+                  onClick={() => setStatsCardToast(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold transition-transform active:scale-95"
+                  style={{ background: "#2a2a4a", color: "#9898b0" }}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
