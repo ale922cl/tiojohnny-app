@@ -1833,13 +1833,20 @@ export default function TioJohnny() {
   // Long-press detection for spotlight mode
   const longPressTimerRef = useRef(null);
   const didLongPressRef = useRef(false);
-  const lastTapRef = useRef(null);   // for double-tap-to-favorite
-  const openTimerRef = useRef(null); // delayed open after single tap
-  const heroTouchX = useRef(null);   // carousel swipe touch tracking
+  const lastTapRef = useRef(null);    // for double-tap-to-favorite
+  const openTimerRef = useRef(null);  // delayed open after single tap
+  const pointerDownRef = useRef(false); // true while finger/pointer is pressed
+  const heroTouchX = useRef(null);    // carousel swipe touch tracking
   const makeLongPress = (t) => ({
-    onPointerDown: () => { if (castMode) return; didLongPressRef.current = false; longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400); },
+    onPointerDown: () => {
+      if (castMode) return;
+      pointerDownRef.current = true;
+      didLongPressRef.current = false;
+      longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400);
+    },
     onPointerUp: (e) => {
       clearTimeout(longPressTimerRef.current);
+      pointerDownRef.current = false;
       if (didLongPressRef.current || castMode) return;
       const now = Date.now();
       if (lastTapRef.current?.id === t.id && now - lastTapRef.current.time < 320) {
@@ -1852,8 +1859,21 @@ export default function TioJohnny() {
         openTimerRef.current = setTimeout(() => { lastTapRef.current = null; openProfile(t); }, 260);
       }
     },
-    onPointerLeave: () => { clearTimeout(longPressTimerRef.current); clearTimeout(openTimerRef.current); lastTapRef.current = null; },
-    onPointerCancel: () => { clearTimeout(longPressTimerRef.current); clearTimeout(openTimerRef.current); lastTapRef.current = null; },
+    // onPointerLeave fires after onPointerUp on mobile — only cancel if pointer is still pressed (drag off)
+    onPointerLeave: () => {
+      if (pointerDownRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        clearTimeout(openTimerRef.current);
+        lastTapRef.current = null;
+        pointerDownRef.current = false;
+      }
+    },
+    onPointerCancel: () => {
+      clearTimeout(longPressTimerRef.current);
+      clearTimeout(openTimerRef.current);
+      lastTapRef.current = null;
+      pointerDownRef.current = false;
+    },
   });
   const swipeCardRef = useRef(null);
   const swipeBackRef = useRef(null);
