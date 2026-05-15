@@ -2823,7 +2823,7 @@ export default function TioJohnny() {
     const isAnalyticsOnly = session?.user?.user_metadata?.role === "analytics" || ANALYTICS_EMAILS.includes(session?.user?.email);
     return (
       <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
-        <div className="max-w-3xl mx-auto">
+        <div className={`mx-auto ${adminTab === "analytics" ? "max-w-6xl" : "max-w-3xl"}`}>
         <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)" }}>
           <div>
             <h1 className="text-lg font-bold text-white flex items-center gap-2">
@@ -2877,7 +2877,7 @@ export default function TioJohnny() {
 
         {/* ═══ ANALYTICS TAB ═══ */}
         {adminTab === "analytics" && (
-          <div className="px-4 py-3">
+          <div className="px-4 py-3 md:px-6 md:py-5">
             {analyticsLoading && (
               <div className="text-center py-16">
                 <Loader2 size={24} color="#8B5CF6" className="animate-spin mx-auto" />
@@ -2885,245 +2885,323 @@ export default function TioJohnny() {
               </div>
             )}
             {analyticsData && !analyticsLoading && (
-              <div className="space-y-4">
-                {/* Range selector + Refresh */}
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-1 gap-1 rounded-xl p-1" style={{ background: "#1e1e3a" }}>
-                    {[{ v: "30", label: "30 días" }, { v: "all", label: "Todo" }, { v: "custom", label: "Fechas" }].map(({ v, label }) => (
-                      <button
-                        key={v}
-                        onClick={() => {
-                          setAnalyticsRange(v);
-                          if (v !== "custom") fetchAnalytics(v, "", "");
-                        }}
-                        className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                        style={{ background: analyticsRange === v ? "#8B5CF6" : "transparent", color: analyticsRange === v ? "#fff" : "#7878a0" }}
-                      >
-                        {label}
-                      </button>
-                    ))}
+              <div className="space-y-5">
+
+                {/* ── Controls row ── */}
+                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className="flex flex-1 gap-1 rounded-xl p-1" style={{ background: "#1e1e3a" }}>
+                      {[{ v: "30", label: "30 días" }, { v: "all", label: "Todo" }, { v: "custom", label: "Fechas" }].map(({ v, label }) => (
+                        <button
+                          key={v}
+                          onClick={() => {
+                            setAnalyticsRange(v);
+                            if (v !== "custom") fetchAnalytics(v, "", "");
+                          }}
+                          className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                          style={{ background: analyticsRange === v ? "#8B5CF6" : "transparent", color: analyticsRange === v ? "#fff" : "#7878a0" }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => fetchAnalytics()} className="text-xs flex items-center gap-1 px-3 py-1.5 rounded-full flex-shrink-0" style={{ background: "#1e1e3a", color: "#8B5CF6" }}>
+                      <RotateCcw size={12} /> Actualizar
+                    </button>
                   </div>
-                  <button onClick={() => fetchAnalytics()} className="text-xs flex items-center gap-1 px-3 py-1.5 rounded-full flex-shrink-0" style={{ background: "#1e1e3a", color: "#8B5CF6" }}>
-                    <RotateCcw size={12} /> Actualizar
-                  </button>
+                  {analyticsRange === "custom" && (
+                    <div className="flex gap-3 md:flex-shrink-0">
+                      <DatePicker
+                        label="Desde"
+                        value={analyticsCustomFrom}
+                        maxDate={analyticsCustomTo || undefined}
+                        onChange={(val) => {
+                          setAnalyticsCustomFrom(val);
+                          if (analyticsCustomTo) fetchAnalytics("custom", val, analyticsCustomTo);
+                        }}
+                      />
+                      <DatePicker
+                        label="Hasta"
+                        value={analyticsCustomTo}
+                        onChange={(val) => {
+                          setAnalyticsCustomTo(val);
+                          if (analyticsCustomFrom) fetchAnalytics("custom", analyticsCustomFrom, val);
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                {/* Custom date range calendar */}
-                {analyticsRange === "custom" && (
-                  <div className="flex gap-3">
-                    <DatePicker
-                      label="Desde"
-                      value={analyticsCustomFrom}
-                      maxDate={analyticsCustomTo || undefined}
-                      onChange={(val) => {
-                        setAnalyticsCustomFrom(val);
-                        if (analyticsCustomTo) fetchAnalytics("custom", val, analyticsCustomTo);
-                      }}
-                    />
-                    <DatePicker
-                      label="Hasta"
-                      value={analyticsCustomTo}
-                      onChange={(val) => {
-                        setAnalyticsCustomTo(val);
-                        if (analyticsCustomFrom) fetchAnalytics("custom", analyticsCustomFrom, val);
-                      }}
-                    />
-                  </div>
-                )}
-
-                {/* Visitors summary */}
+                {/* ── Visitors summary ── */}
                 {analyticsData.fetchedRange === "30" && (
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 md:grid-cols-3 gap-3">
                     {[
                       { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.sessions.today} sesiones` },
                       { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.sessions.week} sesiones` },
                       { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones` },
                     ].map((s) => (
-                      <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
-                        <div className="text-2xl font-bold text-white">{s.value}</div>
-                        <div className="text-xs font-semibold" style={{ color: "#8B5CF6" }}>{s.label}</div>
+                      <div key={s.label} className="rounded-xl p-4 text-center" style={{ background: "#1e1e3a" }}>
+                        <div className="text-3xl font-bold text-white">{s.value}</div>
+                        <div className="text-xs font-semibold mt-1" style={{ color: "#8B5CF6" }}>{s.label}</div>
                         <div className="text-xs mt-0.5" style={{ color: "#4a4a6a" }}>{s.sub}</div>
                       </div>
                     ))}
                   </div>
                 )}
                 {analyticsData.fetchedRange === "all" && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                       { label: "Hoy", value: analyticsData.visitors.today, sub: `${analyticsData.sessions.today} sesiones` },
                       { label: "7 días", value: analyticsData.visitors.week, sub: `${analyticsData.sessions.week} sesiones` },
                       { label: "30 días", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones` },
                       { label: "Total histórico", value: analyticsData.visitors.month, sub: `${analyticsData.sessions.month} sesiones`, accent: true },
                     ].map((s) => (
-                      <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: s.accent ? "rgba(139,92,246,0.15)" : "#1e1e3a", border: s.accent ? "1px solid #8B5CF6" : "none" }}>
-                        <div className="text-2xl font-bold text-white">{s.value}</div>
-                        <div className="text-xs font-semibold" style={{ color: s.accent ? "#8B5CF6" : "#8B5CF6" }}>{s.label}</div>
+                      <div key={s.label} className="rounded-xl p-4 text-center" style={{ background: s.accent ? "rgba(139,92,246,0.15)" : "#1e1e3a", border: s.accent ? "1px solid #8B5CF6" : "none" }}>
+                        <div className="text-3xl font-bold text-white">{s.value}</div>
+                        <div className="text-xs font-semibold mt-1" style={{ color: "#8B5CF6" }}>{s.label}</div>
                         <div className="text-xs mt-0.5" style={{ color: "#4a4a6a" }}>{s.sub}</div>
                       </div>
                     ))}
                   </div>
                 )}
                 {analyticsData.fetchedRange === "custom" && (
-                  <div className="grid grid-cols-1 gap-2">
-                    <div className="rounded-xl p-4 text-center" style={{ background: "rgba(139,92,246,0.15)", border: "1px solid #8B5CF6" }}>
-                      <div className="text-3xl font-bold text-white">{analyticsData.visitors.month}</div>
-                      <div className="text-xs font-semibold mt-1" style={{ color: "#8B5CF6" }}>
-                        Visitantes únicos
-                      </div>
-                      <div className="text-xs mt-0.5" style={{ color: "#7878a0" }}>
-                        {analyticsData.fetchedFrom} → {analyticsData.fetchedTo || "hoy"} · {analyticsData.sessions.month} sesiones
-                      </div>
+                  <div className="rounded-xl p-5 text-center" style={{ background: "rgba(139,92,246,0.15)", border: "1px solid #8B5CF6" }}>
+                    <div className="text-4xl font-bold text-white">{analyticsData.visitors.month}</div>
+                    <div className="text-sm font-semibold mt-1" style={{ color: "#8B5CF6" }}>Visitantes únicos</div>
+                    <div className="text-xs mt-1" style={{ color: "#7878a0" }}>
+                      {analyticsData.fetchedFrom} → {analyticsData.fetchedTo || "hoy"} · {analyticsData.sessions.month} sesiones
                     </div>
                   </div>
                 )}
 
-                {/* Engagement metrics */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* ── Main dashboard grid ── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                  {/* LEFT COLUMN */}
+                  <div className="space-y-4">
+
+                    {/* Engagement metrics */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: "Engagement", value: analyticsData.engagementRate + "%", sub: "vieron un perfil", color: "#22c55e" },
+                        { label: "Rebote", value: analyticsData.bounceRate + "%", sub: "se fueron sin interactuar", color: "#f43f5e" },
+                        { label: "Perfiles/Visita", value: analyticsData.avgProfilesPerVisitor, sub: "promedio", color: "#60a5fa" },
+                        { label: "Recurrentes", value: analyticsData.returnVisitors, sub: "volvieron otro día", color: "#f59e0b" },
+                      ].map((s) => (
+                        <div key={s.label} className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                          <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
+                          <div className="text-xs font-semibold text-white mt-0.5">{s.label}</div>
+                          <div style={{ fontSize: 10, color: "#4a4a6a" }}>{s.sub}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Devices */}
+                    {(analyticsData.devices.mobile + analyticsData.devices.desktop > 0) && (
+                      <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                        <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Dispositivos</h3>
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <div className="flex rounded-full overflow-hidden" style={{ height: 12 }}>
+                              {analyticsData.devices.mobile > 0 && <div style={{ width: `${(analyticsData.devices.mobile / (analyticsData.devices.mobile + analyticsData.devices.desktop)) * 100}%`, background: "#8B5CF6" }} />}
+                              {analyticsData.devices.desktop > 0 && <div style={{ width: `${(analyticsData.devices.desktop / (analyticsData.devices.mobile + analyticsData.devices.desktop)) * 100}%`, background: "#60a5fa" }} />}
+                            </div>
+                          </div>
+                          <div className="flex gap-3 text-xs">
+                            <span style={{ color: "#8B5CF6" }}>{analyticsData.devices.mobile} móvil</span>
+                            <span style={{ color: "#60a5fa" }}>{analyticsData.devices.desktop} desktop</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Contacts */}
+                    {analyticsData.contacts.total > 0 && (
+                      <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                        <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#22c55e" }}>Contactos (intención de contratar)</h3>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="text-center">
+                            <div className="text-2xl font-bold" style={{ color: "#25D366" }}>{analyticsData.contacts.whatsapp}</div>
+                            <div style={{ fontSize: 10, color: "#7878a0" }}>WhatsApp</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-2xl font-bold" style={{ color: "#8B5CF6" }}>{analyticsData.contacts.call}</div>
+                            <div style={{ fontSize: 10, color: "#7878a0" }}>Llamadas</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-2xl font-bold" style={{ color: "#E1306C" }}>{analyticsData.contacts.instagram}</div>
+                            <div style={{ fontSize: 10, color: "#7878a0" }}>Instagram</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pasarela */}
+                    {analyticsData.pasarela.total > 0 && (
+                      <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                        <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Pasarela</h3>
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <div className="flex rounded-full overflow-hidden" style={{ height: 12 }}>
+                              <div style={{ width: `${(analyticsData.pasarela.likes / analyticsData.pasarela.total) * 100}%`, background: "#22c55e" }} />
+                              <div style={{ width: `${(analyticsData.pasarela.skips / analyticsData.pasarela.total) * 100}%`, background: "#f43f5e" }} />
+                            </div>
+                          </div>
+                          <div className="flex gap-3 text-xs">
+                            <span style={{ color: "#22c55e" }}>{analyticsData.pasarela.likes} likes</span>
+                            <span style={{ color: "#f43f5e" }}>{analyticsData.pasarela.skips} skips</span>
+                          </div>
+                        </div>
+                        <p className="text-xs mt-2" style={{ color: "#7878a0" }}>
+                          {analyticsData.pasarela.total > 0 ? Math.round((analyticsData.pasarela.likes / analyticsData.pasarela.total) * 100) : 0}% tasa de like
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Popular categories */}
+                    {analyticsData.topCategories.length > 0 && (
+                      <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                        <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Categorías Populares</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {analyticsData.topCategories.map(([cat, count]) => (
+                            <span key={cat} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: "#12122a", color: "#9898b0" }}>
+                              {cat} <span style={{ color: "#8B5CF6" }}>{count}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RIGHT COLUMN */}
+                  <div className="space-y-4">
+
+                    {/* Daily visitors chart */}
+                    <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                      <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Visitantes Únicos (últimos 7 días)</h3>
+                      <div className="flex items-end justify-between gap-1" style={{ height: 120 }}>
+                        {analyticsData.dailyVisitors.map((d, i) => {
+                          const max = Math.max(...analyticsData.dailyVisitors.map((x) => x.count), 1);
+                          const h = Math.max((d.count / max) * 100, 4);
+                          return (
+                            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                              <span className="text-xs font-bold text-white">{d.count || ""}</span>
+                              <div className="w-full rounded-t-lg" style={{ height: h, background: "linear-gradient(to top, #8B5CF6, #c084fc)", minWidth: 8 }} />
+                              <span style={{ fontSize: 9, color: "#7878a0" }}>{d.day}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Peak hour */}
+                    <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                      <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Hora Pico</h3>
+                      <p className="text-lg font-bold text-white">{analyticsData.peakHour}:00 - {analyticsData.peakHour + 1}:00</p>
+                      <div className="flex items-end gap-px mt-3" style={{ height: 60 }}>
+                        {analyticsData.hourCounts.map((c, i) => {
+                          const max = Math.max(...analyticsData.hourCounts, 1);
+                          return <div key={i} className="flex-1 rounded-t" style={{ height: Math.max((c / max) * 56, 1), background: i === analyticsData.peakHour ? "#8B5CF6" : "#2a2a4a", minWidth: 2 }} />;
+                        })}
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span style={{ fontSize: 8, color: "#4a4a6a" }}>0h</span>
+                        <span style={{ fontSize: 8, color: "#4a4a6a" }}>12h</span>
+                        <span style={{ fontSize: 8, color: "#4a4a6a" }}>23h</span>
+                      </div>
+                    </div>
+
+                    {/* Heatmap */}
+                    <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-semibold uppercase tracking-widest flex items-center gap-1" style={{ color: "#f59e0b" }}>
+                          <TrendingUp size={12} /> Mapa de Atención
+                        </h3>
+                        <button onClick={fetchHeatmap} className="text-xs px-2.5 py-1 rounded-full" style={{ background: "#12122a", color: "#f59e0b" }}>
+                          {heatmapLoading ? "..." : heatmapData ? "Actualizar" : "Cargar"}
+                        </button>
+                      </div>
+                      {heatmapData && (
+                        <div className="space-y-2">
+                          {Object.entries(heatmapData)
+                            .map(([tid, d]) => ({ tid, total: d.views + d.favs + d.shares + d.likes, ...d }))
+                            .sort((a, b) => b.total - a.total)
+                            .slice(0, 10)
+                            .map((item, i) => {
+                              const t = talents.find((x) => x.id === parseInt(item.tid));
+                              if (!t) return null;
+                              const maxTotal = Object.values(heatmapData).reduce((m, d) => Math.max(m, d.views + d.favs + d.shares + d.likes), 1);
+                              const pct = (item.total / maxTotal) * 100;
+                              const heat = pct / 100;
+                              const heatColor = `rgb(${Math.round(255 * Math.min(heat * 2, 1))}, ${Math.round(180 * Math.max(0, 1 - heat * 1.5))}, ${Math.round(60 * (1 - heat))})`;
+                              return (
+                                <div key={item.tid} className="flex items-center gap-2">
+                                  <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
+                                  <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0" style={{ boxShadow: `0 0 ${8 + heat * 12}px ${heatColor}44` }}>
+                                    <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-semibold text-white truncate">{t.name}</p>
+                                    <div className="flex gap-2 mt-0.5" style={{ fontSize: 9 }}>
+                                      <span style={{ color: "#8B5CF6" }}>{item.views} <EyeIcon size={8} style={{ display: "inline" }} /></span>
+                                      <span style={{ color: "#f43f5e" }}>{item.favs} ♥</span>
+                                      <span style={{ color: "#60a5fa" }}>{item.shares} ↗</span>
+                                      <span style={{ color: "#22c55e" }}>{item.likes} ✓</span>
+                                    </div>
+                                  </div>
+                                  <div className="w-16">
+                                    <div className="rounded-full overflow-hidden" style={{ height: 6, background: "#12122a" }}>
+                                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, #f59e0b, ${heatColor})` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                      {!heatmapData && !heatmapLoading && (
+                        <p className="text-xs text-center py-3" style={{ color: "#4a4a6a" }}>Presiona "Cargar" para ver el mapa de atención</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Leaderboards ── */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[
-                    { label: "Engagement", value: analyticsData.engagementRate + "%", sub: "vieron un perfil", color: "#22c55e" },
-                    { label: "Rebote", value: analyticsData.bounceRate + "%", sub: "se fueron sin interactuar", color: "#f43f5e" },
-                    { label: "Perfiles/Visita", value: analyticsData.avgProfilesPerVisitor, sub: "promedio", color: "#60a5fa" },
-                    { label: "Recurrentes", value: analyticsData.returnVisitors, sub: "volvieron otro día", color: "#f59e0b" },
-                  ].map((s) => (
-                    <div key={s.label} className="rounded-xl p-3" style={{ background: "#1e1e3a" }}>
-                      <div className="text-xl font-bold" style={{ color: s.color }}>{s.value}</div>
-                      <div className="text-xs font-semibold text-white">{s.label}</div>
-                      <div style={{ fontSize: 10, color: "#4a4a6a" }}>{s.sub}</div>
+                    { title: "Más Vistas", data: analyticsData.topViewed, color: "#8B5CF6", icon: <EyeIcon size={12} /> },
+                    { title: "Más Favoritas", data: analyticsData.topFavorited, color: "#f43f5e", icon: <Heart size={12} /> },
+                    { title: "Más Compartidas", data: analyticsData.topShared, color: "#60a5fa", icon: <Share2 size={12} /> },
+                  ].map((section) => section.data.length > 0 && (
+                    <div key={section.title} className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                      <h3 className="text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-1" style={{ color: section.color }}>
+                        {section.icon} {section.title}
+                      </h3>
+                      <div className="space-y-2">
+                        {section.data.map(([tid, count], i) => {
+                          const t = talents.find((x) => x.id === parseInt(tid));
+                          if (!t) return null;
+                          const maxCount = section.data[0]?.[1] || 1;
+                          return (
+                            <div key={tid} className="flex items-center gap-2">
+                              <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
+                              <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+                                <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-white truncate">{t.name}</p>
+                                <div className="mt-0.5 rounded-full overflow-hidden" style={{ height: 4, background: "#12122a" }}>
+                                  <div className="h-full rounded-full" style={{ width: `${(count / maxCount) * 100}%`, background: section.color }} />
+                                </div>
+                              </div>
+                              <span className="text-xs font-bold" style={{ color: section.color }}>{count}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
-
-                {/* Device breakdown */}
-                {(analyticsData.devices.mobile + analyticsData.devices.desktop > 0) && (
-                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Dispositivos</h3>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1">
-                        <div className="flex rounded-full overflow-hidden" style={{ height: 12 }}>
-                          {analyticsData.devices.mobile > 0 && <div style={{ width: `${(analyticsData.devices.mobile / (analyticsData.devices.mobile + analyticsData.devices.desktop)) * 100}%`, background: "#8B5CF6" }} />}
-                          {analyticsData.devices.desktop > 0 && <div style={{ width: `${(analyticsData.devices.desktop / (analyticsData.devices.mobile + analyticsData.devices.desktop)) * 100}%`, background: "#60a5fa" }} />}
-                        </div>
-                      </div>
-                      <div className="flex gap-3 text-xs">
-                        <span style={{ color: "#8B5CF6" }}>{analyticsData.devices.mobile} móvil</span>
-                        <span style={{ color: "#60a5fa" }}>{analyticsData.devices.desktop} desktop</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Contact clicks */}
-                {analyticsData.contacts.total > 0 && (
-                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#22c55e" }}>Contactos (intención de contratar)</h3>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="text-center">
-                        <div className="text-lg font-bold" style={{ color: "#25D366" }}>{analyticsData.contacts.whatsapp}</div>
-                        <div style={{ fontSize: 10, color: "#7878a0" }}>WhatsApp</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-lg font-bold" style={{ color: "#8B5CF6" }}>{analyticsData.contacts.call}</div>
-                        <div style={{ fontSize: 10, color: "#7878a0" }}>Llamadas</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-lg font-bold" style={{ color: "#E1306C" }}>{analyticsData.contacts.instagram}</div>
-                        <div style={{ fontSize: 10, color: "#7878a0" }}>Instagram</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Peak hour */}
-                <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                  <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Hora Pico</h3>
-                  <p className="text-lg font-bold text-white">{analyticsData.peakHour}:00 - {analyticsData.peakHour + 1}:00</p>
-                  <div className="flex items-end gap-px mt-2" style={{ height: 40 }}>
-                    {analyticsData.hourCounts.map((c, i) => {
-                      const max = Math.max(...analyticsData.hourCounts, 1);
-                      return <div key={i} className="flex-1 rounded-t" style={{ height: Math.max((c / max) * 36, 1), background: i === analyticsData.peakHour ? "#8B5CF6" : "#2a2a4a", minWidth: 2 }} />;
-                    })}
-                  </div>
-                  <div className="flex justify-between mt-1">
-                    <span style={{ fontSize: 8, color: "#4a4a6a" }}>0h</span>
-                    <span style={{ fontSize: 8, color: "#4a4a6a" }}>12h</span>
-                    <span style={{ fontSize: 8, color: "#4a4a6a" }}>23h</span>
-                  </div>
-                </div>
-
-                {/* Daily visitors chart */}
-                <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                  <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Visitantes Únicos (últimos 7 días)</h3>
-                  <div className="flex items-end justify-between gap-1" style={{ height: 100 }}>
-                    {analyticsData.dailyVisitors.map((d, i) => {
-                      const max = Math.max(...analyticsData.dailyVisitors.map((x) => x.count), 1);
-                      const h = Math.max((d.count / max) * 80, 4);
-                      return (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                          <span className="text-xs font-bold text-white">{d.count || ""}</span>
-                          <div className="w-full rounded-t-lg" style={{ height: h, background: "linear-gradient(to top, #8B5CF6, #c084fc)", minWidth: 8 }} />
-                          <span style={{ fontSize: 9, color: "#7878a0" }}>{d.day}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Pasarela stats */}
-                {analyticsData.pasarela.total > 0 && (
-                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Pasarela</h3>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1">
-                        <div className="flex rounded-full overflow-hidden" style={{ height: 12 }}>
-                          <div style={{ width: `${(analyticsData.pasarela.likes / analyticsData.pasarela.total) * 100}%`, background: "#22c55e" }} />
-                          <div style={{ width: `${(analyticsData.pasarela.skips / analyticsData.pasarela.total) * 100}%`, background: "#f43f5e" }} />
-                        </div>
-                      </div>
-                      <div className="flex gap-3 text-xs">
-                        <span style={{ color: "#22c55e" }}>{analyticsData.pasarela.likes} likes</span>
-                        <span style={{ color: "#f43f5e" }}>{analyticsData.pasarela.skips} skips</span>
-                      </div>
-                    </div>
-                    <p className="text-xs mt-2" style={{ color: "#7878a0" }}>
-                      {analyticsData.pasarela.total > 0 ? Math.round((analyticsData.pasarela.likes / analyticsData.pasarela.total) * 100) : 0}% tasa de like
-                    </p>
-                  </div>
-                )}
-
-                {/* Top viewed / favorited / shared */}
-                {[
-                  { title: "Más Vistas", data: analyticsData.topViewed, color: "#8B5CF6", icon: <EyeIcon size={12} /> },
-                  { title: "Más Favoritas", data: analyticsData.topFavorited, color: "#f43f5e", icon: <Heart size={12} /> },
-                  { title: "Más Compartidas", data: analyticsData.topShared, color: "#60a5fa", icon: <Share2 size={12} /> },
-                ].map((section) => section.data.length > 0 && (
-                  <div key={section.title} className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-1" style={{ color: section.color }}>
-                      {section.icon} {section.title}
-                    </h3>
-                    <div className="space-y-2">
-                      {section.data.map(([tid, count], i) => {
-                        const t = talents.find((x) => x.id === parseInt(tid));
-                        if (!t) return null;
-                        const maxCount = section.data[0]?.[1] || 1;
-                        return (
-                          <div key={tid} className="flex items-center gap-2">
-                            <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
-                            <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
-                              <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-white truncate">{t.name}</p>
-                              <div className="mt-0.5 rounded-full overflow-hidden" style={{ height: 4, background: "#12122a" }}>
-                                <div className="h-full rounded-full" style={{ width: `${(count / maxCount) * 100}%`, background: section.color }} />
-                              </div>
-                            </div>
-                            <span className="text-xs font-bold" style={{ color: section.color }}>{count}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
 
                 {/* ── Más Contactadas ── */}
                 {analyticsData.topContacted.length > 0 && (
@@ -3131,7 +3209,7 @@ export default function TioJohnny() {
                     <h3 className="text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-1" style={{ color: "#25D366" }}>
                       <Phone size={12} /> Más Contactadas
                     </h3>
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {analyticsData.topContacted.map(([tid, total, breakdown], i) => {
                         const t = talents.find((x) => x.id === parseInt(tid));
                         if (!t) return null;
@@ -3162,74 +3240,6 @@ export default function TioJohnny() {
                     </div>
                   </div>
                 )}
-
-                {/* Popular categories */}
-                {analyticsData.topCategories.length > 0 && (
-                  <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                    <h3 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "#8B5CF6" }}>Categorías Populares</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {analyticsData.topCategories.map(([cat, count]) => (
-                        <span key={cat} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: "#12122a", color: "#9898b0" }}>
-                          {cat} <span style={{ color: "#8B5CF6" }}>{count}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Attention Heatmap ── */}
-                <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-widest flex items-center gap-1" style={{ color: "#f59e0b" }}>
-                      <TrendingUp size={12} /> Mapa de Atención
-                    </h3>
-                    <button onClick={fetchHeatmap} className="text-xs px-2.5 py-1 rounded-full" style={{ background: "#12122a", color: "#f59e0b" }}>
-                      {heatmapLoading ? "..." : heatmapData ? "Actualizar" : "Cargar"}
-                    </button>
-                  </div>
-                  {heatmapData && (
-                    <div className="space-y-2">
-                      {Object.entries(heatmapData)
-                        .map(([tid, d]) => ({ tid, total: d.views + d.favs + d.shares + d.likes, ...d }))
-                        .sort((a, b) => b.total - a.total)
-                        .slice(0, 10)
-                        .map((item, i) => {
-                          const t = talents.find((x) => x.id === parseInt(item.tid));
-                          if (!t) return null;
-                          const maxTotal = Object.values(heatmapData).reduce((m, d) => Math.max(m, d.views + d.favs + d.shares + d.likes), 1);
-                          const pct = (item.total / maxTotal) * 100;
-                          // Heat color based on intensity
-                          const heat = pct / 100;
-                          const heatColor = `rgb(${Math.round(255 * Math.min(heat * 2, 1))}, ${Math.round(180 * Math.max(0, 1 - heat * 1.5))}, ${Math.round(60 * (1 - heat))})`;
-                          return (
-                            <div key={item.tid} className="flex items-center gap-2">
-                              <span className="text-xs font-bold w-5 text-right" style={{ color: "#4a4a6a" }}>{i + 1}</span>
-                              <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0" style={{ boxShadow: `0 0 ${8 + heat * 12}px ${heatColor}44` }}>
-                                <img src={getMainPhoto(t)} alt="" className="w-full h-full object-cover" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold text-white truncate">{t.name}</p>
-                                <div className="flex gap-2 mt-0.5" style={{ fontSize: 9 }}>
-                                  <span style={{ color: "#8B5CF6" }}>{item.views} <EyeIcon size={8} style={{ display: "inline" }} /></span>
-                                  <span style={{ color: "#f43f5e" }}>{item.favs} ♥</span>
-                                  <span style={{ color: "#60a5fa" }}>{item.shares} ↗</span>
-                                  <span style={{ color: "#22c55e" }}>{item.likes} ✓</span>
-                                </div>
-                              </div>
-                              <div className="w-16">
-                                <div className="rounded-full overflow-hidden" style={{ height: 6, background: "#12122a" }}>
-                                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, #f59e0b, ${heatColor})` }} />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                  {!heatmapData && !heatmapLoading && (
-                    <p className="text-xs text-center py-3" style={{ color: "#4a4a6a" }}>Presiona "Cargar" para ver el mapa de atención</p>
-                  )}
-                </div>
 
                 <p className="text-xs text-center pb-4" style={{ color: "#4a4a6a" }}>
                   {analyticsData.totalEvents} eventos registrados ({
