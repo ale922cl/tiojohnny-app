@@ -2823,6 +2823,7 @@ export default function TioJohnny() {
     const isAnalyticsOnly = session?.user?.user_metadata?.role === "analytics" || ANALYTICS_EMAILS.includes(session?.user?.email);
     return (
       <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
+        <div className="max-w-3xl mx-auto">
         <header className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)" }}>
           <div>
             <h1 className="text-lg font-bold text-white flex items-center gap-2">
@@ -3608,6 +3609,7 @@ export default function TioJohnny() {
           </div>
         )}
       </div>
+        </div>{/* end max-w-3xl admin */}
     );
   }
 
@@ -3629,7 +3631,8 @@ export default function TioJohnny() {
 
     return (
       <>
-      <div className={`fixed inset-0 z-50 flex flex-col ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "#12122a" }}>
+      <div className={`fixed inset-0 z-50 flex flex-col md:items-center md:justify-center md:p-6 ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "rgba(0,0,0,0.7)" }}>
+        <div className="flex flex-col w-full h-full md:h-[92vh] md:max-w-2xl md:rounded-3xl md:overflow-hidden relative" style={{ background: "#12122a" }}>
         {/* ── Ambient color glow — radiates from behind the hero image ── */}
         <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{ height: "65vh", background: `radial-gradient(ellipse at 50% 30%, ${ambientColor} 0%, transparent 70%)`, transition: "background 0.8s ease", zIndex: 0 }} />
 
@@ -3774,6 +3777,8 @@ export default function TioJohnny() {
           </button>
         </div>
       </div>
+      </div>
+      </div>
 
       {/* ── Lightbox: full-screen photo viewer ── */}
       {lightboxIndex !== null && (
@@ -3863,7 +3868,8 @@ export default function TioJohnny() {
   // ═════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
-      <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3" style={{ background: "rgba(18,18,42,0.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
+      <header className="sticky top-0 z-40" style={{ background: "rgba(18,18,42,0.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
+        <div className="flex items-center justify-between px-4 py-3 max-w-screen-xl mx-auto">
         {searchOpen ? (
           <div className="flex items-center gap-2 w-full relative">
             <Search size={18} style={{ color: "#8B5CF6" }} />
@@ -3913,6 +3919,7 @@ export default function TioJohnny() {
             </div>
           </>
         )}
+        </div>
       </header>
 
       {/* ── Animated entrance counters ── */}
@@ -3940,7 +3947,8 @@ export default function TioJohnny() {
         </div>
       )}
 
-      <div className="sticky z-30 flex gap-2 px-4 py-3 overflow-x-auto" style={{ top: 49, scrollbarWidth: "none", background: "rgba(18,18,42,0.95)", backdropFilter: "blur(12px)" }}>
+      <div className="sticky z-30" style={{ top: 49, background: "rgba(18,18,42,0.95)", backdropFilter: "blur(12px)" }}>
+      <div className="flex gap-2 px-4 py-3 overflow-x-auto max-w-screen-xl mx-auto md:flex-wrap md:overflow-x-visible" style={{ scrollbarWidth: "none" }}>
         {publicCategories.map((cat) => {
           const active = activeCategory === cat;
           const isFavPill = cat === "Favoritas";
@@ -3969,7 +3977,9 @@ export default function TioJohnny() {
           );
         })}
       </div>
+      </div>
 
+      <div className="max-w-screen-xl mx-auto">
       <div className="px-4 pb-2 flex items-center justify-between">
         {/* Left: Filtros + Cast + Currency dropdown */}
         <div className="flex items-center gap-1.5">
@@ -4130,7 +4140,7 @@ export default function TioJohnny() {
       {/* ═══ GRID VIEW ═══ */}
       {viewMode === "grid" && (
         <>
-          <div className={`grid grid-cols-2 gap-3 px-3 pb-8 ${gridMorphing ? "grid-morph-out" : ""}`}>
+          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 px-3 pb-8 ${gridMorphing ? "grid-morph-out" : ""}`}>
             {filtered.map((t, idx) => {
               const isFav = favorites.includes(t.id);
               const isHeartbeat = heartbeatIds.includes(t.id);
@@ -4359,6 +4369,7 @@ export default function TioJohnny() {
           )}
         </div>
       )}
+      </div>{/* end max-w-screen-xl */}
 
       {renderDetail()}
 
