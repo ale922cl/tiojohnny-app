@@ -1932,10 +1932,11 @@ export default function TioJohnny() {
     const greeting = [{ role: "assistant", content: CHAT_GREETING }];
     if (chatMessages.length === 0) {
       setChatMessages(greeting);
-      // Create a new session row
-      const { data, error } = await supabase.from("chat_sessions").insert([{ messages: greeting, status: "active" }]).select("id").single();
+      // Generate UUID client-side to avoid needing SELECT policy for anon
+      const sessionId = crypto.randomUUID();
+      const { error } = await supabase.from("chat_sessions").insert([{ id: sessionId, messages: greeting, status: "active" }]);
       if (error) console.error("chat_sessions insert error:", error);
-      if (data) chatSessionId.current = data.id;
+      else chatSessionId.current = sessionId;
     }
     setChatOpen(true);
   };
