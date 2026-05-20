@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+export const maxDuration = 30; // Vercel: allow up to 30s for this function
+
 const SYSTEM_PROMPT = `Eres un asistente de TioJohnny.cl, el directorio de modelos y talentos para eventos en Chile. Tu trabajo es recopilar información sobre el evento del cliente de forma amigable y conversacional, en español chileno informal.
 
 Necesitas recopilar esta información:
@@ -32,6 +34,8 @@ Reglas importantes:
   COTIZACIÓN_LISTA|{"tipo":"...","fecha":"...","ubicacion":"...","cantidad":N,"duracion":"...","preferencias":"...","presupuesto":"...","nombre":"...","telefono":"..."}
 - No agregues nada más después del JSON`;
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -50,21 +54,29 @@ export default async function handler(req, res) {
     });
   }
 
-  try {
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: messages.slice(-20), // keep last 20 messages to save tokens
-    });
+  const client = new Anthropic({ apiKey });
 
-    return res.status(200).json({ content: response.content[0].text });
-  } catch (err) {
-    console.error("Anthropic error:", err);
-    return res.status(500).json({
-      error: "API_ERROR",
-      content: "Hubo un error al procesar tu mensaje. Por favor intenta de nuevo. 😅",
-    });
+  // Retry up to 3 times on 529 overloaded errors
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: messages.slice(-20),
+      });
+      return res.status(200).json({ content: response.content[0].text });
+    } catch (err) {
+      const isOverloaded = err?.status === 529 || err?.error?.error?.type === "overloaded_error";
+      if (isOverloaded && attempt < 2) {
+        await sleep(1500 * (attempt + 1)); // wait 1.5s, then 3s
+        continue;
+      }
+      console.error("Anthropic error:", err);
+      return res.status(500).json({
+        error: "API_ERROR",
+        content: "Hubo un error al procesar tu mensaje. Por favor intenta de nuevo. 😅",
+      });
+    }
   }
 }
