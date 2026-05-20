@@ -3835,9 +3835,8 @@ export default function TioJohnny() {
                 </div>
               ))
             )}
-          </div>
 
-          {/* ── Archived events ── */}
+            {/* ── Archived events ── */}
           {eventRequests.filter(r => r.status === "archived").length > 0 && (
             <div className="px-4 pb-2">
               <button
@@ -3881,8 +3880,8 @@ export default function TioJohnny() {
             </div>
           )}
 
-          {/* ── All chat sessions log ── */}
-          <div className="px-4 pb-4">
+            {/* ── All chat sessions log ── */}
+            <div className="pb-2">
             <button
               onClick={() => { setShowSessions((s) => !s); if (!showSessions) fetchChatSessions(); }}
               className="w-full text-xs py-2 rounded-xl flex items-center justify-center gap-2"
@@ -3945,6 +3944,7 @@ export default function TioJohnny() {
                 })}
               </div>
             )}
+          </div>
           </div>
         )}
 
