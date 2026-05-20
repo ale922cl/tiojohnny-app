@@ -1980,9 +1980,11 @@ export default function TioJohnny() {
     if (chatMsgsRef.current) chatMsgsRef.current.scrollTop = chatMsgsRef.current.scrollHeight;
   };
   useEffect(() => { scrollChatToBottom(); }, [chatMessages, chatLoading]);
-  // Lock body scroll + track visual viewport directly on the DOM (no React state = no re-renders = no jitter)
+  // On mobile: lock body scroll + track visual viewport directly on DOM node
+  // On desktop: no lock, no tracking (small floating window, keyboard never overlaps)
   useEffect(() => {
-    if (!chatOpen) {
+    const isMobile = window.innerWidth < 768;
+    if (!chatOpen || !isMobile) {
       document.body.style.position = "";
       document.body.style.width = "";
       document.body.style.overflow = "";
@@ -4898,7 +4900,18 @@ export default function TioJohnny() {
 
       {/* ── Chat modal ── */}
       {chatOpen && (
-        <div ref={chatModalRef} className="fixed left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", top: 0, height: "100dvh" }}>
+        <div
+          ref={chatModalRef}
+          className="fixed z-50 flex flex-col"
+          style={{
+            background: "#12122a",
+            // Mobile: full-screen. Desktop: small floating window bottom-right
+            ...(window.innerWidth >= 768
+              ? { bottom: 88, right: 24, width: 380, height: 520, borderRadius: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(139,92,246,0.25)", overflow: "hidden" }
+              : { left: 0, right: 0, top: 0, height: "100dvh" }
+            ),
+          }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
             <div className="flex items-center gap-2.5">
