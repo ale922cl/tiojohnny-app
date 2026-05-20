@@ -1496,6 +1496,10 @@ export default function TioJohnny() {
     const weekAgo   = santiagoStartOf(7);
     const monthAgo  = santiagoStartOf(30);
 
+    // Determine date bounds for the RPC (leaderboards + heatmap)
+    const rpcFrom = r === "30" ? monthAgo : (r === "custom" && cf) ? santiagoDateToUTC(cf, "start") : null;
+    const rpcTo   = (r === "custom" && ct) ? santiagoDateToUTC(ct, "end") : null;
+
     let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false });
     if (r === "30") query = query.gte("created_at", monthAgo);
     else if (r === "custom" && cf) {
@@ -1504,16 +1508,31 @@ export default function TioJohnny() {
     }
     // r === "all": no date filter
 
-    // Fetch today's events in a separate dedicated query so the count is always exact
-    // (avoids the 1000-row default cap skewing today's numbers when mixed with historical data)
-    const [{ data: events }, { data: todayRaw }] = await Promise.all([
+    // Run all three queries in parallel:
+    // 1) main events (for visitor counts, sessions, categories, devices, etc.)
+    // 2) today's events separately so count is never affected by row cap
+    // 3) server-side aggregated talent counts (leaderboards + heatmap) — no row limit
+    const [{ data: events }, { data: todayRaw }, { data: heatRows }] = await Promise.all([
       query,
       supabase.from("analytics_events").select("*").gte("created_at", todayStart).limit(10000),
+      supabase.rpc("get_heatmap_counts", { p_from: rpcFrom, p_to: rpcTo }),
     ]);
 
     if (!events) { setAnalyticsLoading(false); return; }
 
     const todayEvents = todayRaw || [];
+
+    // Build heatmap map from RPC rows and update the heatmap panel too
+    const heatMap = {};
+    (heatRows || []).forEach((row) => {
+      heatMap[row.talent_id] = { views: Number(row.views), favs: Number(row.favs), shares: Number(row.shares), likes: Number(row.likes) };
+    });
+    setHeatmapData(heatMap);
+
+    // Leaderboards — derived from server-side counts so they always match the heatmap
+    const topViewed    = Object.entries(heatMap).map(([id, d]) => [id, d.views]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const topFavorited = Object.entries(heatMap).map(([id, d]) => [id, d.favs]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const topShared    = Object.entries(heatMap).map(([id, d]) => [id, d.shares]).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     // ── Unique REAL visitors (by visitor_id cookie, falls back to session_id for old data) ──
     const getVid = (e) => e.visitor_id || e.session_id;
@@ -1529,23 +1548,8 @@ export default function TioJohnny() {
     const weekSessions = new Set(pageViews.filter((e) => new Date(e.created_at).getTime() >= weekAgoMs).map((e) => e.session_id)).size;
     const monthSessions = new Set(pageViews.map((e) => e.session_id)).size;
 
-    // Profile views — top 10
+    // profileViews still needed for engagement rate
     const profileViews = events.filter((e) => e.event_type === "profile_view" && e.talent_id);
-    const viewCounts = {};
-    profileViews.forEach((e) => { viewCounts[e.talent_id] = (viewCounts[e.talent_id] || 0) + 1; });
-    const topViewed = Object.entries(viewCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-
-    // ── Combined Favorites (grid hearts + pasarela swipe_like) — top 10 ──
-    const allFavEvents = events.filter((e) => (e.event_type === "favorite" || e.event_type === "swipe_like") && e.talent_id);
-    const favCounts = {};
-    allFavEvents.forEach((e) => { favCounts[e.talent_id] = (favCounts[e.talent_id] || 0) + 1; });
-    const topFavorited = Object.entries(favCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-
-    // Shares — top 10
-    const shareEvents = events.filter((e) => e.event_type === "share" && e.talent_id);
-    const shareCounts = {};
-    shareEvents.forEach((e) => { shareCounts[e.talent_id] = (shareCounts[e.talent_id] || 0) + 1; });
-    const topShared = Object.entries(shareCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     // Contacts per talent (whatsapp + call + instagram) — top 10
     const contactEvents = events.filter((e) => ["contact_whatsapp", "contact_call", "contact_instagram"].includes(e.event_type) && e.talent_id);
@@ -1865,17 +1869,14 @@ export default function TioJohnny() {
   // ─── Heatmap / Attention Map data ──────────────────────────────────
   const fetchHeatmap = async () => {
     setHeatmapLoading(true);
-    const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { data } = await supabase.rpc("get_heatmap_counts", { p_from: monthAgo });
+    const monthAgo = santiagoStartOf(30);
+    const rpcFrom = analyticsRange === "30" ? monthAgo : analyticsRange === "custom" && analyticsCustomFrom ? santiagoDateToUTC(analyticsCustomFrom, "start") : null;
+    const rpcTo   = analyticsRange === "custom" && analyticsCustomTo ? santiagoDateToUTC(analyticsCustomTo, "end") : null;
+    const { data } = await supabase.rpc("get_heatmap_counts", { p_from: rpcFrom, p_to: rpcTo });
     if (!data) { setHeatmapLoading(false); return; }
     const map = {};
     data.forEach((row) => {
-      map[row.talent_id] = {
-        views: Number(row.views),
-        favs:  Number(row.favs),
-        shares: Number(row.shares),
-        likes: Number(row.likes),
-      };
+      map[row.talent_id] = { views: Number(row.views), favs: Number(row.favs), shares: Number(row.shares), likes: Number(row.likes) };
     });
     setHeatmapData(map);
     setHeatmapLoading(false);
