@@ -116,9 +116,9 @@ export default async function handler(req, res) {
   for (let attempt = 0; attempt < MAX; attempt++) {
     try {
       const stream = client.messages.stream({
-        model: "claude-sonnet-4-5",
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        model: "claude-haiku-4-5",
+        max_tokens: 700,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         messages: sanitizedMessages,
       });
 
