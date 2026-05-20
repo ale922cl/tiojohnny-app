@@ -1857,13 +1857,40 @@ export default function TioJohnny() {
     ctx.font = "bold 24px Arial"; ctx.fillStyle = "#8B5CF6";
     ctx.fillText("tiojohnny.cl", W / 2, H - 28);
 
-    const link = document.createElement("a");
-    link.download = `stats-${toSlug(t.name)}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+    const phone = (t.phone || "").replace(/\D/g, "");
+    const waText = encodeURIComponent(`Hola ${t.name.split(" ")[0]}! 🌟 Aquí está tu tarjeta de estadísticas de TioJohnny.cl esta semana.`);
+    const fileName = `stats-${toSlug(t.name)}.png`;
 
-    setStatsCardLoading(null);
-    if (t.phone) { setStatsCardToast(t); setTimeout(() => setStatsCardToast(null), 7000); }
+    // Try Web Share API with file (works on mobile Chrome/Safari — image goes directly into WhatsApp)
+    const tryNativeShare = async (blob) => {
+      const file = new File([blob], fileName, { type: "image/png" });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: `Tarjeta de ${t.name}`, text: `Hola ${t.name.split(" ")[0]}! 🌟 Tu tarjeta de estadísticas de TioJohnny.cl` });
+          return true;
+        } catch (e) {
+          if (e.name === "AbortError") return true; // user cancelled, don't fallback
+        }
+      }
+      return false;
+    };
+
+    canvas.toBlob(async (blob) => {
+      const shared = await tryNativeShare(blob);
+      if (!shared) {
+        // Desktop fallback: download image + open WhatsApp to her number
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = fileName;
+        link.href = url;
+        link.click();
+        URL.revokeObjectURL(url);
+        if (phone) setTimeout(() => window.open(`https://wa.me/${phone}?text=${waText}`, "_blank"), 600);
+        else { setStatsCardToast(t); setTimeout(() => setStatsCardToast(null), 7000); }
+      }
+      trackEvent("tarjeta_pro_download", t.id);
+      setStatsCardLoading(null);
+    }, "image/png");
   };
 
   // ─── Heatmap / Attention Map data ──────────────────────────────────
