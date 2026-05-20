@@ -1976,12 +1976,17 @@ export default function TioJohnny() {
 
   useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatLoading]);
   // Track visual viewport height so chat modal shrinks when keyboard opens
-  const [chatVpHeight, setChatVpHeight] = useState(null);
+  const [chatVpStyle, setChatVpStyle] = useState({});
   useEffect(() => {
     if (!chatOpen) return;
     const update = () => {
-      setChatVpHeight(window.visualViewport?.height ?? window.innerHeight);
-      if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+      const vp = window.visualViewport;
+      if (vp) {
+        setChatVpStyle({ top: `${vp.offsetTop}px`, height: `${vp.height}px` });
+      } else {
+        setChatVpStyle({ top: 0, height: "100dvh" });
+      }
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     };
     update();
     window.visualViewport?.addEventListener("resize", update);
@@ -4875,7 +4880,7 @@ export default function TioJohnny() {
 
       {/* ── Chat modal ── */}
       {chatOpen && (
-        <div className="fixed top-0 left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", height: chatVpHeight ? `${chatVpHeight}px` : "100dvh" }}>
+        <div className="fixed left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", top: chatVpStyle.top ?? 0, height: chatVpStyle.height ?? "100dvh" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
             <div className="flex items-center gap-2.5">
