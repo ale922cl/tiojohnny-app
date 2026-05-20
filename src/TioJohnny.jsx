@@ -77,19 +77,24 @@ function generatePlaceholderSvg(id) {
 
 
 // Burn "tiojohnny.cl" watermark onto a photo file via Canvas and return a new Blob
+// Also resizes to max 1500px on the longest side to reduce file size (~5-8MB → ~300-500KB)
 async function applyWatermark(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
+
+      // ── Resize to max 1500px on longest side ─────────────────────────────
+      const MAX = 1500;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width  = Math.round(img.naturalWidth  * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
       const ctx = canvas.getContext("2d");
 
-      // Draw original image
-      ctx.drawImage(img, 0, 0);
+      // Draw original image (scaled)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
       // ── Watermark config ──────────────────────────────────────────────────
       const shortSide = Math.min(canvas.width, canvas.height);
@@ -118,7 +123,7 @@ async function applyWatermark(file) {
       canvas.toBlob(
         (blob) => blob ? resolve(new File([blob], file.name, { type: "image/jpeg" })) : reject(new Error("Canvas toBlob failed")),
         "image/jpeg",
-        0.88
+        0.82
       );
     };
     img.onerror = reject;
