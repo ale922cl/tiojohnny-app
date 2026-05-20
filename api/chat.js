@@ -64,8 +64,9 @@ export default async function handler(req, res) {
 
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-  // Retry up to 3 times on 529 overloaded errors
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Try up to 5 times on 529 overloaded — notify client on each retry
+  const MAX = 5;
+  for (let attempt = 0; attempt < MAX; attempt++) {
     try {
       const stream = client.messages.stream({
         model: "claude-haiku-4-5",
@@ -85,8 +86,9 @@ export default async function handler(req, res) {
       return;
     } catch (err) {
       const isOverloaded = err?.status === 529 || err?.error?.error?.type === "overloaded_error";
-      if (isOverloaded && attempt < 2) {
-        await sleep(800 * (attempt + 1));
+      if (isOverloaded && attempt < MAX - 1) {
+        send({ retrying: attempt + 1 }); // tell client we're retrying
+        await sleep(600 + attempt * 400); // 600ms, 1000ms, 1400ms, 1800ms
         continue;
       }
       console.error("Anthropic error:", err);

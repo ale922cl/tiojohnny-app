@@ -1961,6 +1961,13 @@ export default function TioJohnny() {
             const payload = JSON.parse(part.slice(6));
             if (payload.error) throw new Error("API error");
             if (payload.done) break;
+            if (payload.retrying) {
+              setChatMessages((prev) => {
+                const msgs = [...prev];
+                msgs[msgs.length - 1] = { role: "assistant", content: "⏳ Un momento, conectando..." };
+                return msgs;
+              });
+            }
             if (payload.text) {
               fullText += payload.text;
               setChatMessages((prev) => {
