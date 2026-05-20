@@ -1975,6 +1975,13 @@ export default function TioJohnny() {
   };
 
   useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatLoading]);
+  // Re-scroll when soft keyboard opens/closes (mobile viewport resize)
+  useEffect(() => {
+    if (!chatOpen) return;
+    const onResize = () => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); };
+    window.visualViewport?.addEventListener("resize", onResize);
+    return () => window.visualViewport?.removeEventListener("resize", onResize);
+  }, [chatOpen]);
 
   // Animated category switching with morph transition
   const switchCategory = useCallback((cat) => {
@@ -4922,6 +4929,7 @@ export default function TioJohnny() {
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                  onFocus={() => setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 300)}
                   placeholder="Escribe tu mensaje..."
                   className="flex-1 px-4 py-3 rounded-2xl text-sm text-white outline-none"
                   style={{ background: "#2a2a4a", border: "1px solid rgba(139,92,246,0.2)" }}
