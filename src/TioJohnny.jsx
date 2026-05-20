@@ -1979,23 +1979,40 @@ export default function TioJohnny() {
     if (chatMsgsRef.current) chatMsgsRef.current.scrollTop = chatMsgsRef.current.scrollHeight;
   };
   useEffect(() => { scrollChatToBottom(); }, [chatMessages, chatLoading]);
-  // Lock body scroll and track visual viewport height when chat is open
+  // Lock body scroll and track visual viewport position when chat is open
+  const [chatVpTop, setChatVpTop] = useState(0);
   const [chatVpHeight, setChatVpHeight] = useState(null);
   useEffect(() => {
     if (!chatOpen) {
+      document.body.style.position = "";
+      document.body.style.width = "";
       document.body.style.overflow = "";
+      setChatVpTop(0);
       setChatVpHeight(null);
       return;
     }
+    // position:fixed on body is the only reliable way to stop Android scroll-on-focus
+    document.body.style.position = "fixed";
+    document.body.style.width = "100%";
     document.body.style.overflow = "hidden";
     const update = () => {
       const vp = window.visualViewport;
-      setChatVpHeight(vp ? vp.height : window.innerHeight);
+      if (vp) {
+        setChatVpTop(vp.offsetTop);
+        setChatVpHeight(vp.height);
+      } else {
+        setChatVpTop(0);
+        setChatVpHeight(window.innerHeight);
+      }
     };
     update();
     window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
     return () => {
       window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+      document.body.style.position = "";
+      document.body.style.width = "";
       document.body.style.overflow = "";
     };
   }, [chatOpen]);
@@ -4883,7 +4900,7 @@ export default function TioJohnny() {
 
       {/* ── Chat modal ── */}
       {chatOpen && (
-        <div className="fixed top-0 left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", height: chatVpHeight ? `${chatVpHeight}px` : "100dvh", transition: "height 0.15s ease-out" }}>
+        <div className="fixed left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", top: `${chatVpTop}px`, height: chatVpHeight ? `${chatVpHeight}px` : "100dvh", transition: "top 0.15s ease-out, height 0.15s ease-out" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
             <div className="flex items-center gap-2.5">
