@@ -1496,7 +1496,7 @@ export default function TioJohnny() {
     const weekAgo   = santiagoStartOf(7);
     const monthAgo  = santiagoStartOf(30);
 
-    let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false }).limit(10000);
+    let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false });
     if (r === "30") query = query.gte("created_at", monthAgo);
     else if (r === "custom" && cf) {
       query = query.gte("created_at", santiagoDateToUTC(cf, "start"));
@@ -1866,20 +1866,16 @@ export default function TioJohnny() {
   const fetchHeatmap = async () => {
     setHeatmapLoading(true);
     const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { data: events } = await supabase
-      .from("analytics_events")
-      .select("event_type, talent_id")
-      .gte("created_at", monthAgo);
-    if (!events) { setHeatmapLoading(false); return; }
-    // Group by talent: count profile_view, share, favorite, swipe_like per talent
+    const { data } = await supabase.rpc("get_heatmap_counts", { p_from: monthAgo });
+    if (!data) { setHeatmapLoading(false); return; }
     const map = {};
-    events.forEach((e) => {
-      if (!e.talent_id) return;
-      if (!map[e.talent_id]) map[e.talent_id] = { views: 0, favs: 0, shares: 0, likes: 0 };
-      if (e.event_type === "profile_view") map[e.talent_id].views++;
-      if (e.event_type === "favorite") map[e.talent_id].favs++;
-      if (e.event_type === "share") map[e.talent_id].shares++;
-      if (e.event_type === "swipe_like") map[e.talent_id].likes++;
+    data.forEach((row) => {
+      map[row.talent_id] = {
+        views: Number(row.views),
+        favs:  Number(row.favs),
+        shares: Number(row.shares),
+        likes: Number(row.likes),
+      };
     });
     setHeatmapData(map);
     setHeatmapLoading(false);
