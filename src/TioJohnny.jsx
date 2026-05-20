@@ -1508,19 +1508,24 @@ export default function TioJohnny() {
     }
     // r === "all": no date filter
 
-    // Run all three queries in parallel:
-    // 1) main events (for visitor counts, sessions, categories, devices, etc.)
-    // 2) today's events separately so count is never affected by row cap
-    // 3) server-side aggregated talent counts (leaderboards + heatmap) — no row limit
-    const [{ data: events }, { data: todayRaw }, { data: heatRows }] = await Promise.all([
+    // Run all queries in parallel:
+    // 1) main events (categories, devices, daily chart, bounce rate — row-limited but ok for these)
+    // 2) server-side exact visitor/session counts (no row limit)
+    // 3) server-side aggregated talent counts (leaderboards + heatmap)
+    const [{ data: events }, { data: visitorStats }, { data: heatRows }] = await Promise.all([
       query,
-      supabase.from("analytics_events").select("*").gte("created_at", todayStart).limit(10000),
+      supabase.rpc("get_unique_visitor_counts", {
+        p_today: todayStart,
+        p_week:  weekAgo,
+        p_month: r === "30" ? monthAgo : r === "custom" && cf ? santiagoDateToUTC(cf, "start") : null,
+      }),
       supabase.rpc("get_heatmap_counts", { p_from: rpcFrom, p_to: rpcTo }),
     ]);
 
     if (!events) { setAnalyticsLoading(false); return; }
 
-    const todayEvents = todayRaw || [];
+    // Exact visitor + session counts from server-side RPC
+    const vs = visitorStats || {};
 
     // Build heatmap map from RPC rows and update the heatmap panel too
     const heatMap = {};
@@ -1534,19 +1539,13 @@ export default function TioJohnny() {
     const topFavorited = Object.entries(heatMap).map(([id, d]) => [id, d.favs + d.likes]).sort((a, b) => b[1] - a[1]).slice(0, 10);
     const topShared    = Object.entries(heatMap).map(([id, d]) => [id, d.shares]).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
-    // ── Unique REAL visitors (by visitor_id cookie, falls back to session_id for old data) ──
+    // ── Unique REAL visitors — from server-side RPC (exact, no row limit) ──
     const getVid = (e) => e.visitor_id || e.session_id;
     const weekAgoMs = new Date(weekAgo).getTime();
-    const allVisitors = new Set(events.map(getVid));
-    const todayVisitors = new Set(todayEvents.map(getVid));
-    const weekVisitors = new Set(events.filter((e) => new Date(e.created_at).getTime() >= weekAgoMs).map(getVid));
 
-    // Page views (sessions, not refreshes — count unique sessions)
+    // Still need events for engagement rate, bounce rate, daily chart
+    const allVisitors = new Set(events.map(getVid));
     const pageViews = events.filter((e) => e.event_type === "page_view");
-    const todayPageViews = todayEvents.filter((e) => e.event_type === "page_view");
-    const todaySessions = new Set(todayPageViews.map((e) => e.session_id)).size;
-    const weekSessions = new Set(pageViews.filter((e) => new Date(e.created_at).getTime() >= weekAgoMs).map((e) => e.session_id)).size;
-    const monthSessions = new Set(pageViews.map((e) => e.session_id)).size;
 
     // profileViews still needed for engagement rate
     const profileViews = events.filter((e) => e.event_type === "profile_view" && e.talent_id);
@@ -1631,8 +1630,8 @@ export default function TioJohnny() {
     const peakHour = hourCounts.indexOf(Math.max(...hourCounts));
 
     setAnalyticsData({
-      visitors: { today: todayVisitors.size, week: weekVisitors.size, month: allVisitors.size },
-      sessions: { today: todaySessions, week: weekSessions, month: monthSessions },
+      visitors: { today: vs.today_visitors || 0, week: vs.week_visitors || 0, month: vs.month_visitors || 0 },
+      sessions: { today: vs.today_sessions || 0, week: vs.week_sessions || 0, month: vs.month_sessions || 0 },
       topViewed, topFavorited, topShared, topContacted, contactByTalent,
       pasarela: { likes: swipeLikes, skips: swipeSkips, total: swipeTotal },
       topCategories,
