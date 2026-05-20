@@ -602,6 +602,7 @@ export default function TioJohnny() {
   const [shareCardTalent, setShareCardTalent] = useState(null);
   const [statsCardLoading, setStatsCardLoading] = useState(null); // talent id
   const [statsCardToast, setStatsCardToast] = useState(null);     // talent object
+  const [watermarkProgress, setWatermarkProgress] = useState(null); // null | { done, total, errors }
 
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
@@ -1634,6 +1635,42 @@ export default function TioJohnny() {
       fetchedTo: ct,
     });
     setAnalyticsLoading(false);
+  };
+
+  // ─── Retroactive watermark for all existing photos ────────────────
+  const watermarkAllPhotos = async () => {
+    const allPhotos = talents.flatMap((t) => (t.photos || []).map((url) => ({ url, talentId: t.id })));
+    if (allPhotos.length === 0) return;
+    setWatermarkProgress({ done: 0, total: allPhotos.length, errors: 0 });
+
+    let done = 0; let errors = 0;
+    for (const { url } of allPhotos) {
+      try {
+        // Extract storage path from public URL
+        const marker = "/storage/v1/object/public/talent-photos/";
+        const idx = url.indexOf(marker);
+        if (idx === -1) { errors++; done++; setWatermarkProgress({ done, total: allPhotos.length, errors }); continue; }
+        const storagePath = decodeURIComponent(url.slice(idx + marker.length).split("?")[0]);
+
+        // Fetch image and apply watermark
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("fetch failed");
+        const blob = await res.blob();
+        const file = new File([blob], "photo.jpg", { type: blob.type });
+        const watermarked = await applyWatermark(file);
+
+        // Overwrite the same path
+        const { error } = await supabase.storage
+          .from("talent-photos")
+          .upload(storagePath, watermarked, { cacheControl: "31536000", upsert: true });
+        if (error) throw error;
+      } catch (e) {
+        console.error("Watermark failed for", url, e);
+        errors++;
+      }
+      done++;
+      setWatermarkProgress({ done, total: allPhotos.length, errors });
+    }
   };
 
   // ─── Stats card generator (per-talent WhatsApp image) ─────────────
@@ -3433,7 +3470,45 @@ export default function TioJohnny() {
           <button onClick={() => { setCsvImportOpen((o) => !o); setCsvPreview([]); setCsvResult(null); }} className="py-3 px-4 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: csvImportOpen ? "#2a2a4a" : "#1e1e3a", border: "1px solid #2a2a4a" }}>
             <FileSpreadsheet size={18} color="#8B5CF6" />
           </button>
+          <button
+            onClick={() => { if (!watermarkProgress || watermarkProgress.done === watermarkProgress.total) watermarkAllPhotos(); }}
+            disabled={watermarkProgress && watermarkProgress.done < watermarkProgress.total}
+            className="py-3 px-4 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95"
+            style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", opacity: watermarkProgress && watermarkProgress.done < watermarkProgress.total ? 0.6 : 1 }}
+            title="Añadir marca de agua a todas las fotos existentes"
+          >
+            <ImageIcon size={16} color="#8B5CF6" />
+          </button>
         </div>
+
+        {/* Watermark progress */}
+        {watermarkProgress && (
+          <div className="px-4 pb-3">
+            <div className="rounded-xl p-3" style={{ background: "#1e1e3a" }}>
+              {watermarkProgress.done < watermarkProgress.total ? (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                      <Loader2 size={12} color="#8B5CF6" className="animate-spin" /> Añadiendo marca de agua...
+                    </span>
+                    <span className="text-xs" style={{ color: "#7878a0" }}>{watermarkProgress.done} / {watermarkProgress.total}</span>
+                  </div>
+                  <div className="rounded-full overflow-hidden" style={{ height: 6, background: "#12122a" }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${(watermarkProgress.done / watermarkProgress.total) * 100}%`, background: "linear-gradient(90deg, #8B5CF6, #c084fc)" }} />
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold" style={{ color: "#22c55e" }}>
+                    ✓ {watermarkProgress.total - watermarkProgress.errors} fotos marcadas
+                    {watermarkProgress.errors > 0 && <span style={{ color: "#f43f5e" }}> · {watermarkProgress.errors} errores</span>}
+                  </span>
+                  <button onClick={() => setWatermarkProgress(null)} className="text-xs px-2 py-1 rounded-lg" style={{ background: "#12122a", color: "#7878a0" }}>OK</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Registration link ── */}
         <div className="px-4 pb-3">
