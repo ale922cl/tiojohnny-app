@@ -603,6 +603,7 @@ export default function TioJohnny() {
   const [statsCardLoading, setStatsCardLoading] = useState(null); // talent id
   const [statsCardToast, setStatsCardToast] = useState(null);     // talent object
   const [watermarkProgress, setWatermarkProgress] = useState(null); // null | { done, total, errors }
+  const [watermarkPreview, setWatermarkPreview] = useState(null);   // null | { dataUrl, totalPhotos }
 
   // ─── Swipe mode state ──────────────────────────────────────────────
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "swipe"
@@ -1635,6 +1636,27 @@ export default function TioJohnny() {
       fetchedTo: ct,
     });
     setAnalyticsLoading(false);
+  };
+
+  // ─── Watermark preview (one sample photo, no upload) ─────────────
+  const previewWatermark = async () => {
+    const sampleUrl = talents.flatMap((t) => t.photos || []).find(Boolean);
+    if (!sampleUrl) return;
+    try {
+      const res = await fetch(sampleUrl);
+      const blob = await res.blob();
+      const file = new File([blob], "photo.jpg", { type: blob.type });
+      const watermarked = await applyWatermark(file);
+      const dataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsDataURL(watermarked);
+      });
+      const totalPhotos = talents.reduce((n, t) => n + (t.photos || []).length, 0);
+      setWatermarkPreview({ dataUrl, totalPhotos });
+    } catch (e) {
+      console.error("Preview failed", e);
+    }
   };
 
   // ─── Retroactive watermark for all existing photos ────────────────
@@ -3471,15 +3493,60 @@ export default function TioJohnny() {
             <FileSpreadsheet size={18} color="#8B5CF6" />
           </button>
           <button
-            onClick={() => { if (!watermarkProgress || watermarkProgress.done === watermarkProgress.total) watermarkAllPhotos(); }}
+            onClick={previewWatermark}
             disabled={watermarkProgress && watermarkProgress.done < watermarkProgress.total}
             className="py-3 px-4 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95"
             style={{ background: "#1e1e3a", border: "1px solid #2a2a4a", opacity: watermarkProgress && watermarkProgress.done < watermarkProgress.total ? 0.6 : 1 }}
-            title="Añadir marca de agua a todas las fotos existentes"
+            title="Previsualizar marca de agua"
           >
             <ImageIcon size={16} color="#8B5CF6" />
           </button>
         </div>
+
+        {/* Watermark preview modal */}
+        {watermarkPreview && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.85)" }}>
+            <div className="w-full max-w-sm rounded-3xl overflow-hidden flex flex-col" style={{ background: "#12122a", maxHeight: "90vh" }}>
+              <div className="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0">
+                <div>
+                  <h3 className="text-base font-bold text-white">Vista previa</h3>
+                  <p className="text-xs mt-0.5" style={{ color: "#7878a0" }}>Así se verá la marca de agua</p>
+                </div>
+                <button onClick={() => setWatermarkPreview(null)} className="p-2 rounded-full" style={{ background: "#1e1e3a" }}>
+                  <X size={18} color="#9898b0" />
+                </button>
+              </div>
+
+              {/* Preview image */}
+              <div className="mx-5 rounded-2xl overflow-hidden flex-shrink-0" style={{ maxHeight: "55vh" }}>
+                <img src={watermarkPreview.dataUrl} alt="Preview" className="w-full h-full object-contain" style={{ background: "#000" }} />
+              </div>
+
+              <div className="px-5 pt-3 pb-2 flex-shrink-0">
+                <p className="text-xs text-center" style={{ color: "#7878a0" }}>
+                  Esto aplicará la marca de agua a <span className="font-bold text-white">{watermarkPreview.totalPhotos} fotos</span> existentes. No se puede deshacer.
+                </p>
+              </div>
+
+              <div className="px-5 pb-5 flex gap-3 flex-shrink-0">
+                <button
+                  onClick={() => setWatermarkPreview(null)}
+                  className="flex-1 py-3 rounded-xl font-bold text-sm"
+                  style={{ background: "#1e1e3a", color: "#9898b0" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => { setWatermarkPreview(null); watermarkAllPhotos(); }}
+                  className="flex-1 py-3 rounded-xl font-bold text-sm text-white"
+                  style={{ background: "#8B5CF6" }}
+                >
+                  Aplicar a todas
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Watermark progress */}
         {watermarkProgress && (
