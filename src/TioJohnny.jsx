@@ -1642,9 +1642,13 @@ export default function TioJohnny() {
     const sampleUrl = talents.flatMap((t) => t.photos || []).find(Boolean);
     if (!sampleUrl) return;
     try {
-      const res = await fetch(sampleUrl);
-      const blob = await res.blob();
-      const file = new File([blob], "photo.jpg", { type: blob.type });
+      const marker = "/storage/v1/object/public/talent-photos/";
+      const idx = sampleUrl.indexOf(marker);
+      if (idx === -1) return;
+      const storagePath = decodeURIComponent(sampleUrl.slice(idx + marker.length).split("?")[0]);
+      const { data: dlData, error: dlError } = await supabase.storage.from("talent-photos").download(storagePath);
+      if (dlError) throw dlError;
+      const file = new File([dlData], "photo.jpg", { type: dlData.type || "image/jpeg" });
       const watermarked = await applyWatermark(file);
       const dataUrl = await new Promise((resolve) => {
         const reader = new FileReader();
@@ -1673,11 +1677,12 @@ export default function TioJohnny() {
         if (idx === -1) { errors++; done++; setWatermarkProgress({ done, total: allPhotos.length, errors }); continue; }
         const storagePath = decodeURIComponent(url.slice(idx + marker.length).split("?")[0]);
 
-        // Fetch image and apply watermark
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("fetch failed");
-        const blob = await res.blob();
-        const file = new File([blob], "photo.jpg", { type: blob.type });
+        // Download via Supabase client (avoids CORS issues with fetch())
+        const { data: dlData, error: dlError } = await supabase.storage
+          .from("talent-photos")
+          .download(storagePath);
+        if (dlError) throw dlError;
+        const file = new File([dlData], "photo.jpg", { type: dlData.type || "image/jpeg" });
         const watermarked = await applyWatermark(file);
 
         // Overwrite the same path
