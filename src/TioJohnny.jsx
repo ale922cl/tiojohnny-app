@@ -4365,7 +4365,7 @@ export default function TioJohnny() {
               const trendRank = allCounts.filter(c => c > trendViews).length;
               const trendLimit = filtered.length >= 10 ? 3 : 2;
               const isTrending = trendViews >= 1 && trendRank < trendLimit;
-              const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 30 * 86400000;
+              const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
               return (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
