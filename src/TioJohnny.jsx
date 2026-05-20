@@ -604,6 +604,7 @@ export default function TioJohnny() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatCompleted, setChatCompleted] = useState(false);
   const [eventRequests, setEventRequests] = useState([]);
+  const [expandedChatLogs, setExpandedChatLogs] = useState({});
   const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -3768,6 +3769,34 @@ export default function TioJohnny() {
                           <option value="closed">Cerrado</option>
                         </select>
                       </div>
+                    </div>
+                  )}
+                  {/* Chat log toggle */}
+                  {req.messages?.length > 0 && (
+                    <div>
+                      <button
+                        onClick={() => setExpandedChatLogs((prev) => ({ ...prev, [req.id]: !prev[req.id] }))}
+                        className="text-xs flex items-center gap-1 pt-1"
+                        style={{ color: "#6b6b90" }}
+                      >
+                        {expandedChatLogs[req.id] ? "▲ Ocultar conversación" : `▼ Ver conversación completa (${req.messages.length} mensajes)`}
+                      </button>
+                      {expandedChatLogs[req.id] && (
+                        <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                          {req.messages.map((msg, i) => (
+                            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                              <div className="text-xs px-3 py-1.5 rounded-xl max-w-[85%]" style={{
+                                background: msg.role === "user" ? "rgba(139,92,246,0.25)" : "#12122a",
+                                color: msg.role === "user" ? "#c4b5fd" : "#9898b0",
+                                whiteSpace: "pre-wrap",
+                                borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
+                              }}>
+                                {msg.content}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
