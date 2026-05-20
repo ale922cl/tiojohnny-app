@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   for (let attempt = 0; attempt < MAX; attempt++) {
     try {
       const stream = client.messages.stream({
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-5",
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: messages.slice(-20),
