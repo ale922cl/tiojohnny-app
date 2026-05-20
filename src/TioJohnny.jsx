@@ -1989,7 +1989,8 @@ export default function TioJohnny() {
           await supabase.from("event_requests").insert([{
             event_type: eventData.tipo, event_date: eventData.fecha, location: eventData.ubicacion,
             talent_count: Number(eventData.cantidad) || null, duration: eventData.duracion,
-            preferences: eventData.preferencias, budget: eventData.presupuesto,
+            preferences: eventData.preferencias, requested_models: eventData.modelos_solicitados || null,
+            budget: eventData.presupuesto,
             contact_name: eventData.nombre, contact_phone: eventData.telefono,
             summary: `${eventData.tipo} · ${eventData.fecha} · ${eventData.ubicacion} · ${eventData.cantidad} talento(s)`,
             messages: newMessages, status: "pending",
@@ -3724,6 +3725,32 @@ export default function TioJohnny() {
                     {req.duration && <p>⏱ {req.duration}</p>}
                     {req.budget && <p>💰 {req.budget}</p>}
                     {req.preferences && req.preferences !== "Sin preferencia específica" && <p className="col-span-2">✨ {req.preferences}</p>}
+                    {req.requested_models && req.requested_models !== "Sin preferencia" && <p className="col-span-2">⭐ Solicitadas: {req.requested_models}</p>}
+                  </div>
+                  {/* Notificar Talentos */}
+                  <div className="pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: "#7878a0" }}>Mensaje para talentos:</p>
+                    <div className="rounded-xl p-2.5 text-xs mb-2 select-all" style={{ background: "#12122a", color: "#c0c0d8", lineHeight: 1.5 }}>
+                      {`Hola! 👋 Tenemos un evento disponible en TioJohnny.cl:\n\n📅 ${req.event_type || "Evento"} — ${req.event_date || ""}\n📍 ${req.location || ""}\n👯 ${req.talent_count || ""} talento(s) · ⏱ ${req.duration || ""}\n💰 Presupuesto: ${req.budget || "Flexible"}\n✨ Perfil: ${req.preferences || "Flexible"}\n\n¿Estás disponible e interesada? Responde aquí 🙌`}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => navigator.clipboard.writeText(`Hola! 👋 Tenemos un evento disponible en TioJohnny.cl:\n\n📅 ${req.event_type || "Evento"} — ${req.event_date || ""}\n📍 ${req.location || ""}\n👯 ${req.talent_count || ""} talento(s) · ⏱ ${req.duration || ""}\n💰 Presupuesto: ${req.budget || "Flexible"}\n✨ Perfil: ${req.preferences || "Flexible"}\n\n¿Estás disponible e interesada? Responde aquí 🙌`)}
+                        className="text-xs px-2.5 py-1 rounded-full font-semibold"
+                        style={{ background: "#2a2a4a", color: "#8B5CF6" }}
+                      >
+                        📋 Copiar mensaje
+                      </button>
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Hola! 👋 Tenemos un evento disponible en TioJohnny.cl:\n\n📅 ${req.event_type || "Evento"} — ${req.event_date || ""}\n📍 ${req.location || ""}\n👯 ${req.talent_count || ""} talento(s) · ⏱ ${req.duration || ""}\n💰 Presupuesto: ${req.budget || "Flexible"}\n✨ Perfil: ${req.preferences || "Flexible"}\n\n¿Estás disponible e interesada? Responde aquí 🙌`)}`}
+                        target="_blank" rel="noreferrer"
+                        className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1"
+                        style={{ background: "rgba(37,211,102,0.15)", color: "#25D366" }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                        Enviar a talento
+                      </a>
+                    </div>
                   </div>
                   {(req.contact_name || req.contact_phone) && (
                     <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
@@ -3732,7 +3759,7 @@ export default function TioJohnny() {
                         {req.contact_phone && (
                           <a href={`https://wa.me/${req.contact_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hola ${req.contact_name?.split(" ")[0] || ""}! Te contactamos de TioJohnny.cl por tu cotización para ${req.event_type || "tu evento"}.`)}`} target="_blank" rel="noreferrer" className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: "#25D366", color: "#fff" }}>
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                            Contactar
+                            Contactar cliente
                           </a>
                         )}
                         <select value={req.status} onChange={async (e) => { await supabase.from("event_requests").update({ status: e.target.value }).eq("id", req.id); fetchEventRequests(); }} className="text-xs px-2 py-1 rounded-full" style={{ background: "#12122a", color: "#7878a0", border: "1px solid #2a2a4a" }}>
