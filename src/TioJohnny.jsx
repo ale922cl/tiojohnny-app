@@ -1926,7 +1926,7 @@ export default function TioJohnny() {
   const chatEndRef = useRef(null);
   const chatMsgsRef = useRef(null);
   const chatModalRef = useRef(null);
-  const CHAT_GREETING = "¡Hola! 😏 Bienvenido/a a TioJohnny.cl — donde los eventos se ponen buenos de verdad.\n\n¿Qué estás armando? 👇\n[OPCIONES: Despedida de soltero 🥃|Despedida de soltera 💅|Fiesta privada 🎉|Evento corporativo 💼|Sesión fotográfica 📸|Desfile / pasarela 👠|Otro]";
+  const CHAT_GREETING = "¡Hola! 😏 Bienvenido/a a TioJohnny.cl — donde los eventos se ponen buenos de verdad.\n\n¿Qué estás armando?";
 
   const openChat = async () => {
     const greeting = [{ role: "assistant", content: CHAT_GREETING }];
@@ -5166,47 +5166,22 @@ export default function TioJohnny() {
 
           {/* Messages */}
           <div ref={chatMsgsRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ overscrollBehavior: "contain" }}>
-            {chatMessages.map((msg, i) => {
-              const isLast = i === chatMessages.length - 1;
-              const isAssistant = msg.role === "assistant";
-              // Parse [OPCIONES: opt1|opt2|...] from assistant messages
-              const optMatch = isAssistant ? msg.content.match(/\[OPCIONES:\s*([^\]]+)\]/) : null;
-              const options = optMatch ? optMatch[1].split("|").map(o => o.trim()).filter(Boolean) : [];
-              const displayText = msg.content.replace(/\[OPCIONES:[^\]]+\]/g, "").trim();
-              const showOptions = isLast && isAssistant && options.length > 0 && !chatLoading && !chatCompleted;
-              return (
-                <div key={i}>
-                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className="max-w-xs rounded-2xl px-4 py-3 text-sm"
-                      style={{
-                        background: msg.role === "user" ? "#8B5CF6" : "#1e1e3a",
-                        color: "#fff",
-                        borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                        whiteSpace: "pre-wrap",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {displayText}
-                    </div>
-                  </div>
-                  {showOptions && (
-                    <div className="flex flex-wrap gap-2 mt-2 pl-1">
-                      {options.map((opt, j) => (
-                        <button
-                          key={j}
-                          onClick={() => sendChatMessage(opt)}
-                          className="text-xs px-3 py-1.5 rounded-full transition-all active:scale-95"
-                          style={{ background: "#1e1e3a", border: "1px solid rgba(139,92,246,0.5)", color: "#c4b5fd" }}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className="max-w-xs rounded-2xl px-4 py-3 text-sm"
+                  style={{
+                    background: msg.role === "user" ? "#8B5CF6" : "#1e1e3a",
+                    color: "#fff",
+                    borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                    whiteSpace: "pre-wrap",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {msg.content}
                 </div>
-              );
-            })}
+              </div>
+            ))}
             {chatLoading && (
               <div className="flex justify-start">
                 <div className="px-4 py-3 rounded-2xl" style={{ background: "#1e1e3a", borderRadius: "18px 18px 18px 4px" }}>
