@@ -1918,6 +1918,7 @@ export default function TioJohnny() {
 
   // ─── Event booking chat agent ──────────────────────────────────────
   const chatEndRef = useRef(null);
+  const chatMsgsRef = useRef(null);
   const CHAT_GREETING = "¡Hola! 👋 Soy el Tío Johnny. Estoy aquí para ayudarte a encontrar el talento perfecto para tu evento.\n\n¿Qué tipo de evento estás organizando?";
 
   const openChat = () => {
@@ -1974,31 +1975,28 @@ export default function TioJohnny() {
     if (data) setEventRequests(data);
   };
 
-  useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatLoading]);
-  // Track visual viewport height so chat modal shrinks when keyboard opens
-  const [chatVpStyle, setChatVpStyle] = useState({});
+  const scrollChatToBottom = () => {
+    if (chatMsgsRef.current) chatMsgsRef.current.scrollTop = chatMsgsRef.current.scrollHeight;
+  };
+  useEffect(() => { scrollChatToBottom(); }, [chatMessages, chatLoading]);
+  // Lock body scroll and track visual viewport height when chat is open
+  const [chatVpHeight, setChatVpHeight] = useState(null);
   useEffect(() => {
-    if (!chatOpen) return;
-    let raf = null;
+    if (!chatOpen) {
+      document.body.style.overflow = "";
+      setChatVpHeight(null);
+      return;
+    }
+    document.body.style.overflow = "hidden";
     const update = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const vp = window.visualViewport;
-        if (vp) {
-          setChatVpStyle({ top: `${vp.offsetTop}px`, height: `${vp.height}px` });
-        } else {
-          setChatVpStyle({ top: 0, height: "100dvh" });
-        }
-        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-      });
+      const vp = window.visualViewport;
+      setChatVpHeight(vp ? vp.height : window.innerHeight);
     };
     update();
     window.visualViewport?.addEventListener("resize", update);
-    window.visualViewport?.addEventListener("scroll", update);
     return () => {
-      if (raf) cancelAnimationFrame(raf);
       window.visualViewport?.removeEventListener("resize", update);
-      window.visualViewport?.removeEventListener("scroll", update);
+      document.body.style.overflow = "";
     };
   }, [chatOpen]);
 
@@ -4885,7 +4883,7 @@ export default function TioJohnny() {
 
       {/* ── Chat modal ── */}
       {chatOpen && (
-        <div className="fixed left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", top: chatVpStyle.top ?? 0, height: chatVpStyle.height ?? "100dvh" }}>
+        <div className="fixed top-0 left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", height: chatVpHeight ? `${chatVpHeight}px` : "100dvh", transition: "height 0.15s ease-out" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
             <div className="flex items-center gap-2.5">
@@ -4903,7 +4901,7 @@ export default function TioJohnny() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ overscrollBehavior: "contain" }}>
+          <div ref={chatMsgsRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ overscrollBehavior: "contain" }}>
             {chatMessages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div
@@ -4948,7 +4946,7 @@ export default function TioJohnny() {
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
-                  onFocus={() => setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 300)}
+                  onFocus={() => setTimeout(() => scrollChatToBottom(), 350)}
                   placeholder="Escribe tu mensaje..."
                   className="flex-1 px-4 py-3 rounded-2xl text-sm text-white outline-none"
                   style={{ background: "#2a2a4a", border: "1px solid rgba(139,92,246,0.2)" }}
