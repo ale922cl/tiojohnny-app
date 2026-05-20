@@ -1918,7 +1918,7 @@ export default function TioJohnny() {
 
   // ─── Event booking chat agent ──────────────────────────────────────
   const chatEndRef = useRef(null);
-  const CHAT_GREETING = "¡Hola! 👋 Soy el asistente de TioJohnny.cl. Estoy aquí para ayudarte a encontrar el talento perfecto para tu evento.\n\n¿Qué tipo de evento estás organizando?";
+  const CHAT_GREETING = "¡Hola! 👋 Soy el Tío Johnny. Estoy aquí para ayudarte a encontrar el talento perfecto para tu evento.\n\n¿Qué tipo de evento estás organizando?";
 
   const openChat = () => {
     if (chatMessages.length === 0) {
@@ -4925,7 +4925,6 @@ export default function TioJohnny() {
                   placeholder="Escribe tu mensaje..."
                   className="flex-1 px-4 py-3 rounded-2xl text-sm text-white outline-none"
                   style={{ background: "#2a2a4a", border: "1px solid rgba(139,92,246,0.2)" }}
-                  autoFocus
                 />
                 <button
                   onClick={() => sendChatMessage()}
