@@ -1975,12 +1975,21 @@ export default function TioJohnny() {
   };
 
   useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatLoading]);
-  // Re-scroll when soft keyboard opens/closes (mobile viewport resize)
+  // Track visual viewport height so chat modal shrinks when keyboard opens
+  const [chatVpHeight, setChatVpHeight] = useState(null);
   useEffect(() => {
     if (!chatOpen) return;
-    const onResize = () => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); };
-    window.visualViewport?.addEventListener("resize", onResize);
-    return () => window.visualViewport?.removeEventListener("resize", onResize);
+    const update = () => {
+      setChatVpHeight(window.visualViewport?.height ?? window.innerHeight);
+      if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    };
+    update();
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
   }, [chatOpen]);
 
   // Animated category switching with morph transition
@@ -4866,7 +4875,7 @@ export default function TioJohnny() {
 
       {/* ── Chat modal ── */}
       {chatOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "#12122a" }}>
+        <div className="fixed top-0 left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", height: chatVpHeight ? `${chatVpHeight}px` : "100dvh" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
             <div className="flex items-center gap-2.5">
