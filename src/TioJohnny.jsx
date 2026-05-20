@@ -1979,19 +1979,24 @@ export default function TioJohnny() {
   const [chatVpStyle, setChatVpStyle] = useState({});
   useEffect(() => {
     if (!chatOpen) return;
+    let raf = null;
     const update = () => {
-      const vp = window.visualViewport;
-      if (vp) {
-        setChatVpStyle({ top: `${vp.offsetTop}px`, height: `${vp.height}px` });
-      } else {
-        setChatVpStyle({ top: 0, height: "100dvh" });
-      }
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const vp = window.visualViewport;
+        if (vp) {
+          setChatVpStyle({ top: `${vp.offsetTop}px`, height: `${vp.height}px` });
+        } else {
+          setChatVpStyle({ top: 0, height: "100dvh" });
+        }
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      });
     };
     update();
     window.visualViewport?.addEventListener("resize", update);
     window.visualViewport?.addEventListener("scroll", update);
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
     };
