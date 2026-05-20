@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-export const maxDuration = 30; // Vercel: allow up to 30s for this function
+export const maxDuration = 30;
 
 const SYSTEM_PROMPT = `Eres un asistente de TioJohnny.cl, el directorio de modelos y talentos para eventos en Chile. Tu trabajo es recopilar información sobre el evento del cliente de forma amigable y conversacional, en español chileno informal.
 
@@ -56,27 +56,43 @@ export default async function handler(req, res) {
 
   const client = new Anthropic({ apiKey });
 
+  // Set up SSE headers for streaming
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
   // Retry up to 3 times on 529 overloaded errors
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await client.messages.create({
+      const stream = client.messages.stream({
         model: "claude-haiku-4-5",
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: messages.slice(-20),
       });
-      return res.status(200).json({ content: response.content[0].text });
+
+      for await (const chunk of stream) {
+        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+          send({ text: chunk.delta.text });
+        }
+      }
+
+      send({ done: true });
+      res.end();
+      return;
     } catch (err) {
       const isOverloaded = err?.status === 529 || err?.error?.error?.type === "overloaded_error";
       if (isOverloaded && attempt < 2) {
-        await sleep(1500 * (attempt + 1)); // wait 1.5s, then 3s
+        await sleep(800 * (attempt + 1));
         continue;
       }
       console.error("Anthropic error:", err);
-      return res.status(500).json({
-        error: "API_ERROR",
-        content: "Hubo un error al procesar tu mensaje. Por favor intenta de nuevo. 😅",
-      });
+      send({ error: true });
+      res.end();
+      return;
     }
   }
 }

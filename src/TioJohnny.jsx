@@ -1934,7 +1934,7 @@ export default function TioJohnny() {
     if (!trimmed || chatLoading || chatCompleted) return;
     const userMsg = { role: "user", content: trimmed };
     const newMessages = [...chatMessages, userMsg];
-    setChatMessages(newMessages);
+    setChatMessages([...newMessages, { role: "assistant", content: "" }]); // streaming placeholder
     setChatInput("");
     setChatLoading(true);
     try {
@@ -1943,10 +1943,40 @@ export default function TioJohnny() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newMessages.filter((m) => m.role !== "system") }),
       });
-      const data = await res.json();
-      const reply = data.content || "Lo siento, hubo un error. Intenta de nuevo. 😅";
-      if (reply.startsWith("COTIZACIÓN_LISTA|")) {
-        const jsonStr = reply.slice("COTIZACIÓN_LISTA|".length).trim();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+        for (const part of parts) {
+          if (!part.startsWith("data: ")) continue;
+          try {
+            const payload = JSON.parse(part.slice(6));
+            if (payload.error) throw new Error("API error");
+            if (payload.done) break;
+            if (payload.text) {
+              fullText += payload.text;
+              setChatMessages((prev) => {
+                const msgs = [...prev];
+                msgs[msgs.length - 1] = { role: "assistant", content: fullText };
+                return msgs;
+              });
+              scrollChatToBottom();
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Check if completed booking
+      if (fullText.startsWith("COTIZACIÓN_LISTA|")) {
+        const jsonStr = fullText.slice("COTIZACIÓN_LISTA|".length).trim();
         try {
           const eventData = JSON.parse(jsonStr);
           await supabase.from("event_requests").insert([{
@@ -1958,15 +1988,13 @@ export default function TioJohnny() {
             messages: newMessages, status: "pending",
           }]);
           setChatCompleted(true);
-          setChatMessages((prev) => [...prev, { role: "assistant", content: `¡Listo! 🎉 Tu cotización quedó registrada. Nos contactaremos contigo al ${eventData.telefono} a la brevedad.\n\n¡Gracias por confiar en TioJohnny.cl! 💜` }]);
+          setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: `¡Listo! 🎉 Tu cotización quedó registrada. Nos contactaremos contigo al ${eventData.telefono} a la brevedad.\n\n¡Gracias por confiar en TioJohnny.cl! 💜` }]);
         } catch (_) {
-          setChatMessages((prev) => [...prev, { role: "assistant", content: "¡Tu cotización está casi lista! Hubo un pequeño error al guardarla — por favor intenta enviar el mensaje de confirmación de nuevo." }]);
+          setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: "¡Tu cotización está casi lista! Hubo un pequeño error al guardarla — por favor intenta enviar el mensaje de confirmación de nuevo." }]);
         }
-      } else {
-        setChatMessages((prev) => [...prev, { role: "assistant", content: reply }]);
       }
     } catch (_) {
-      setChatMessages((prev) => [...prev, { role: "assistant", content: "Hubo un error de conexión. Por favor intenta de nuevo. 😅" }]);
+      setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: "Hubo un error de conexión. Por favor intenta de nuevo. 😅" }]);
     }
     setChatLoading(false);
   };
