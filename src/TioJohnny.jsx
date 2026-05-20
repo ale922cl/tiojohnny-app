@@ -721,15 +721,11 @@ export default function TioJohnny() {
 
   // ─── Fetch trending data ──────────────────────────────────────────
   const fetchTrending = useCallback(() => {
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-    supabase.from("analytics_events")
-      .select("talent_id")
-      .eq("event_type", "profile_view")
-      .gte("created_at", weekAgo)
+    supabase.rpc("get_trending_counts")
       .then(({ data }) => {
         if (!data) return;
         const counts = {};
-        data.forEach((e) => { if (e.talent_id) counts[e.talent_id] = (counts[e.talent_id] || 0) + 1; });
+        data.forEach((e) => { if (e.talent_id) counts[e.talent_id] = Number(e.view_count); });
         setTrendingData(counts);
       });
   }, []);
