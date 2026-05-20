@@ -1926,7 +1926,7 @@ export default function TioJohnny() {
   const chatEndRef = useRef(null);
   const chatMsgsRef = useRef(null);
   const chatModalRef = useRef(null);
-  const CHAT_GREETING = "¡Hola! 😏 Bienvenido/a a TioJohnny.cl — donde los eventos se ponen buenos de verdad.\n\n¿Qué estás armando?";
+  const CHAT_GREETING = "¡Hola! 😏 Bienvenido/a a TioJohnny.cl — donde los eventos se ponen buenos de verdad.\n\n¿Qué tipo de evento estás organizando? Puede ser una despedida de soltero/a, fiesta privada, evento corporativo, desfile, sesión de fotos... lo que sea 🎉";
 
   const openChat = async () => {
     const greeting = [{ role: "assistant", content: CHAT_GREETING }];
