@@ -93,26 +93,25 @@ async function applyWatermark(file) {
 
       // ── Watermark config ──────────────────────────────────────────────────
       const shortSide = Math.min(canvas.width, canvas.height);
-      const fontSize = Math.round(shortSide * 0.048); // ~5% of shorter dimension
-      const padding = Math.round(shortSide * 0.03);
+      const fontSize = Math.round(shortSide * 0.052);
 
       ctx.save();
 
       // Soft dark shadow so text reads on both light and dark photos
-      ctx.shadowColor = "rgba(0,0,0,0.55)";
-      ctx.shadowBlur = Math.round(fontSize * 0.5);
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = Math.round(fontSize * 0.55);
       ctx.shadowOffsetX = Math.round(fontSize * 0.06);
       ctx.shadowOffsetY = Math.round(fontSize * 0.06);
 
-      // Text style
+      // Text style — centered horizontally, 72% down vertically (hard to crop from any edge)
       ctx.font = `700 ${fontSize}px 'Sora', 'Arial', sans-serif`;
-      ctx.textAlign = "right";
-      ctx.textBaseline = "bottom";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
 
       // Semi-transparent white — visible but not overpowering
       ctx.globalAlpha = 0.55;
       ctx.fillStyle = "#ffffff";
-      ctx.fillText("tiojohnny.cl", canvas.width - padding, canvas.height - padding);
+      ctx.fillText("tiojohnny.cl", canvas.width / 2, canvas.height * 0.72);
 
       ctx.restore();
 
