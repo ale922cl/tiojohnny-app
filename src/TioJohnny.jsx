@@ -1933,7 +1933,8 @@ export default function TioJohnny() {
     if (chatMessages.length === 0) {
       setChatMessages(greeting);
       // Create a new session row
-      const { data } = await supabase.from("chat_sessions").insert([{ messages: greeting, status: "active" }]).select("id").single();
+      const { data, error } = await supabase.from("chat_sessions").insert([{ messages: greeting, status: "active" }]).select("id").single();
+      if (error) console.error("chat_sessions insert error:", error);
       if (data) chatSessionId.current = data.id;
     }
     setChatOpen(true);
