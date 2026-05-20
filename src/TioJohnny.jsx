@@ -1496,7 +1496,7 @@ export default function TioJohnny() {
     const weekAgo   = santiagoStartOf(7);
     const monthAgo  = santiagoStartOf(30);
 
-    let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false });
+    let query = supabase.from("analytics_events").select("*").order("created_at", { ascending: false }).limit(10000);
     if (r === "30") query = query.gte("created_at", monthAgo);
     else if (r === "custom" && cf) {
       query = query.gte("created_at", santiagoDateToUTC(cf, "start"));
@@ -1504,20 +1504,29 @@ export default function TioJohnny() {
     }
     // r === "all": no date filter
 
-    const { data: events } = await query;
+    // Fetch today's events in a separate dedicated query so the count is always exact
+    // (avoids the 1000-row default cap skewing today's numbers when mixed with historical data)
+    const [{ data: events }, { data: todayRaw }] = await Promise.all([
+      query,
+      supabase.from("analytics_events").select("*").gte("created_at", todayStart).limit(10000),
+    ]);
 
     if (!events) { setAnalyticsLoading(false); return; }
 
+    const todayEvents = todayRaw || [];
+
     // ── Unique REAL visitors (by visitor_id cookie, falls back to session_id for old data) ──
     const getVid = (e) => e.visitor_id || e.session_id;
+    const weekAgoMs = new Date(weekAgo).getTime();
     const allVisitors = new Set(events.map(getVid));
-    const todayVisitors = new Set(events.filter((e) => e.created_at >= todayStart).map(getVid));
-    const weekVisitors = new Set(events.filter((e) => e.created_at >= weekAgo).map(getVid));
+    const todayVisitors = new Set(todayEvents.map(getVid));
+    const weekVisitors = new Set(events.filter((e) => new Date(e.created_at).getTime() >= weekAgoMs).map(getVid));
 
     // Page views (sessions, not refreshes — count unique sessions)
     const pageViews = events.filter((e) => e.event_type === "page_view");
-    const todaySessions = new Set(pageViews.filter((e) => e.created_at >= todayStart).map((e) => e.session_id)).size;
-    const weekSessions = new Set(pageViews.filter((e) => e.created_at >= weekAgo).map((e) => e.session_id)).size;
+    const todayPageViews = todayEvents.filter((e) => e.event_type === "page_view");
+    const todaySessions = new Set(todayPageViews.map((e) => e.session_id)).size;
+    const weekSessions = new Set(pageViews.filter((e) => new Date(e.created_at).getTime() >= weekAgoMs).map((e) => e.session_id)).size;
     const monthSessions = new Set(pageViews.map((e) => e.session_id)).size;
 
     // Profile views — top 10
@@ -1563,12 +1572,14 @@ export default function TioJohnny() {
     catEvents.forEach((e) => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
     const topCategories = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // Daily visitors (last 7 days) — by real visitor_id
+    // Daily visitors (last 7 days) — by real visitor_id, using Santiago dates
     const dailyVisitors = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
-      const dayStr = d.toISOString().slice(0, 10);
-      const dayVids = new Set(events.filter((e) => e.created_at.slice(0, 10) === dayStr).map(getVid));
+      const dayStr = d.toLocaleDateString("en-CA", { timeZone: "America/Santiago" }); // "YYYY-MM-DD" in Santiago tz
+      const dayStart = new Date(santiagoDateToUTC(dayStr, "start")).getTime();
+      const dayEnd   = new Date(santiagoDateToUTC(dayStr, "end")).getTime();
+      const dayVids = new Set(events.filter((e) => { const t = new Date(e.created_at).getTime(); return t >= dayStart && t <= dayEnd; }).map(getVid));
       dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: dayVids.size });
     }
 
