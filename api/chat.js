@@ -2,6 +2,25 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const maxDuration = 30;
 
+// Simple in-memory rate limiter: 20 requests per IP per hour
+const rateLimitMap = new Map();
+const RATE_LIMIT = 20;
+const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip) || { count: 0, windowStart: now };
+  if (now - entry.windowStart > RATE_WINDOW_MS) {
+    // Reset window
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  if (entry.count >= RATE_LIMIT) return true;
+  entry.count++;
+  rateLimitMap.set(ip, entry);
+  return false;
+}
+
 const SYSTEM_PROMPT = `Eres un asistente de TioJohnny.cl, el directorio de modelos y talentos para eventos en Chile. Tu trabajo es recopilar información sobre el evento del cliente de forma amigable y conversacional, en español chileno informal.
 
 Necesitas recopilar esta información:
@@ -44,10 +63,24 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+  if (isRateLimited(ip)) {
+    return res.status(429).json({
+      error: "RATE_LIMITED",
+      content: "Has enviado demasiados mensajes. Por favor espera un momento antes de continuar. 🙏",
+    });
+  }
+
   const { messages } = req.body || {};
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "Invalid messages" });
   }
+
+  // Cap message length to avoid token abuse
+  const sanitizedMessages = messages.slice(-20).map((m) => ({
+    role: m.role,
+    content: String(m.content || "").slice(0, 1000),
+  }));
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -75,7 +108,7 @@ export default async function handler(req, res) {
         model: "claude-sonnet-4-5",
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
-        messages: messages.slice(-20),
+        messages: sanitizedMessages,
       });
 
       for await (const chunk of stream) {
