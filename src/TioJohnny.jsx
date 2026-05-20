@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
-  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download, Image as ImageIcon, ZoomIn,
+  ArrowLeft, User, Camera, Settings, Loader2, AlertCircle, Tag, GripVertical, Archive, ArchiveRestore, Share2, Check, Layers, Grid3X3, RotateCcw, Upload, FileSpreadsheet, BarChart3, TrendingUp, Users, Eye as EyeIcon, SlidersHorizontal, Download, Image as ImageIcon, ZoomIn, MessageSquare, Send,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
@@ -361,6 +361,7 @@ const ANIM_CSS = `
 .heart-pop   { animation: heartPop 0.4s cubic-bezier(0.22,1,0.36,1); }
 .pill-pop    { animation: pillPop 0.3s cubic-bezier(0.22,1,0.36,1); }
 .badge-bounce { animation: favBadgeBounce 0.4s cubic-bezier(0.22,1,0.36,1); }
+@keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 `;
 
 // Returns UTC ISO string for start/end of a date string ("YYYY-MM-DD") in Santiago timezone
@@ -595,7 +596,14 @@ export default function TioJohnny() {
   const csvFileRef = useRef(null);
 
   // ─── Analytics state ───────────────────────────────────────────────
-  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "pendientes" | "analytics"
+  const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "pendientes" | "analytics" | "cotizaciones"
+  // ── Event booking chat agent ──
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatCompleted, setChatCompleted] = useState(false);
+  const [eventRequests, setEventRequests] = useState([]);
   const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -1908,6 +1916,66 @@ export default function TioJohnny() {
     setHeatmapLoading(false);
   };
 
+  // ─── Event booking chat agent ──────────────────────────────────────
+  const chatEndRef = useRef(null);
+  const CHAT_GREETING = "¡Hola! 👋 Soy el asistente de TioJohnny.cl. Estoy aquí para ayudarte a encontrar el talento perfecto para tu evento.\n\n¿Qué tipo de evento estás organizando?";
+
+  const openChat = () => {
+    if (chatMessages.length === 0) {
+      setChatMessages([{ role: "assistant", content: CHAT_GREETING }]);
+    }
+    setChatOpen(true);
+  };
+
+  const sendChatMessage = async (text) => {
+    const trimmed = (text || chatInput).trim();
+    if (!trimmed || chatLoading || chatCompleted) return;
+    const userMsg = { role: "user", content: trimmed };
+    const newMessages = [...chatMessages, userMsg];
+    setChatMessages(newMessages);
+    setChatInput("");
+    setChatLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages.filter((m) => m.role !== "system") }),
+      });
+      const data = await res.json();
+      const reply = data.content || "Lo siento, hubo un error. Intenta de nuevo. 😅";
+      if (reply.startsWith("COTIZACIÓN_LISTA|")) {
+        const jsonStr = reply.slice("COTIZACIÓN_LISTA|".length).trim();
+        try {
+          const eventData = JSON.parse(jsonStr);
+          await supabase.from("event_requests").insert([{
+            event_type: eventData.tipo, event_date: eventData.fecha, location: eventData.ubicacion,
+            talent_count: Number(eventData.cantidad) || null, duration: eventData.duracion,
+            preferences: eventData.preferencias, budget: eventData.presupuesto,
+            contact_name: eventData.nombre, contact_phone: eventData.telefono,
+            summary: `${eventData.tipo} · ${eventData.fecha} · ${eventData.ubicacion} · ${eventData.cantidad} talento(s)`,
+            messages: newMessages, status: "pending",
+          }]);
+          setChatCompleted(true);
+          setChatMessages((prev) => [...prev, { role: "assistant", content: `¡Listo! 🎉 Tu cotización quedó registrada. Nos contactaremos contigo al ${eventData.telefono} a la brevedad.\n\n¡Gracias por confiar en TioJohnny.cl! 💜` }]);
+        } catch (_) {
+          setChatMessages((prev) => [...prev, { role: "assistant", content: "¡Tu cotización está casi lista! Hubo un pequeño error al guardarla — por favor intenta enviar el mensaje de confirmación de nuevo." }]);
+        }
+      } else {
+        setChatMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      }
+    } catch (_) {
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "Hubo un error de conexión. Por favor intenta de nuevo. 😅" }]);
+    }
+    setChatLoading(false);
+  };
+
+  const fetchEventRequests = async () => {
+    const { data } = await supabase.from("event_requests").select("*").order("created_at", { ascending: false });
+    if (data) setEventRequests(data);
+  };
+
+  useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatLoading]);
+
   // Animated category switching with morph transition
   const switchCategory = useCallback((cat) => {
     if (cat === prevCategoryRef.current) return;
@@ -3079,6 +3147,20 @@ export default function TioJohnny() {
           >
             <BarChart3 size={16} /> Analytics
           </button>
+          {!isAnalyticsOnly && (
+            <button
+              onClick={() => { setAdminTab("cotizaciones"); fetchEventRequests(); }}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all relative"
+              style={{ background: adminTab === "cotizaciones" ? "#22c55e" : "#1e1e3a", color: adminTab === "cotizaciones" ? "#fff" : "#7878a0" }}
+            >
+              <MessageSquare size={16} /> Eventos
+              {eventRequests.filter((r) => r.status === "pending").length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white font-bold flex items-center justify-center" style={{ background: "#22c55e", fontSize: 10 }}>
+                  {eventRequests.filter((r) => r.status === "pending").length}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         {/* ═══ ANALYTICS TAB ═══ */}
@@ -3530,6 +3612,63 @@ export default function TioJohnny() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ COTIZACIONES TAB ═══ */}
+        {adminTab === "cotizaciones" && (
+          <div className="px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: "#22c55e" }}>Cotizaciones de Eventos</h2>
+              <button onClick={fetchEventRequests} className="text-xs px-3 py-1.5 rounded-full" style={{ background: "#1e1e3a", color: "#7878a0" }}>Actualizar</button>
+            </div>
+            {eventRequests.length === 0 ? (
+              <div className="text-center py-16">
+                <MessageSquare size={40} className="mx-auto mb-3" style={{ color: "#2a2a4a" }} />
+                <p className="text-sm" style={{ color: "#6b6b90" }}>No hay cotizaciones aún.</p>
+                <p className="text-xs mt-1" style={{ color: "#4a4a6a" }}>Cuando alguien use el chat de eventos, aparecerá aquí.</p>
+              </div>
+            ) : (
+              eventRequests.map((req) => (
+                <div key={req.id} className="rounded-2xl p-4 space-y-2" style={{ background: "#1e1e3a", border: req.status === "pending" ? "1px solid rgba(34,197,94,0.4)" : "1px solid transparent" }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-bold text-white">{req.event_type || "Evento"}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "#7878a0" }}>{new Date(req.created_at).toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                    </div>
+                    <span className="text-xs px-2 py-1 rounded-full font-semibold flex-shrink-0" style={{ background: req.status === "pending" ? "rgba(34,197,94,0.15)" : req.status === "contacted" ? "rgba(139,92,246,0.15)" : "rgba(100,100,100,0.15)", color: req.status === "pending" ? "#22c55e" : req.status === "contacted" ? "#8B5CF6" : "#7878a0" }}>
+                      {req.status === "pending" ? "Nuevo" : req.status === "contacted" ? "Contactado" : "Cerrado"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs" style={{ color: "#9898b0" }}>
+                    {req.event_date && <p>📅 {req.event_date}</p>}
+                    {req.location && <p>📍 {req.location}</p>}
+                    {req.talent_count && <p>👯 {req.talent_count} talento(s)</p>}
+                    {req.duration && <p>⏱ {req.duration}</p>}
+                    {req.budget && <p>💰 {req.budget}</p>}
+                    {req.preferences && req.preferences !== "Sin preferencia específica" && <p className="col-span-2">✨ {req.preferences}</p>}
+                  </div>
+                  {(req.contact_name || req.contact_phone) && (
+                    <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                      <p className="text-xs font-semibold text-white">{req.contact_name} {req.contact_phone && <span style={{ color: "#8B5CF6" }}>· {req.contact_phone}</span>}</p>
+                      <div className="flex gap-2">
+                        {req.contact_phone && (
+                          <a href={`https://wa.me/${req.contact_phone.replace(/\D/g, "")}?text=${encodeURIComponent(`Hola ${req.contact_name?.split(" ")[0] || ""}! Te contactamos de TioJohnny.cl por tu cotización para ${req.event_type || "tu evento"}.`)}`} target="_blank" rel="noreferrer" className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: "#25D366", color: "#fff" }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            Contactar
+                          </a>
+                        )}
+                        <select value={req.status} onChange={async (e) => { await supabase.from("event_requests").update({ status: e.target.value }).eq("id", req.id); fetchEventRequests(); }} className="text-xs px-2 py-1 rounded-full" style={{ background: "#12122a", color: "#7878a0", border: "1px solid #2a2a4a" }}>
+                          <option value="pending">Nuevo</option>
+                          <option value="contacted">Contactado</option>
+                          <option value="closed">Cerrado</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
             )}
           </div>
         )}
@@ -4703,6 +4842,102 @@ export default function TioJohnny() {
           >
             <Share2 size={18} /> Enviar {castSelected.size} perfil{castSelected.size !== 1 ? "es" : ""} por WhatsApp
           </button>
+        </div>
+      )}
+
+      {/* ── Cotizar Evento floating button ── */}
+      {view === "public" && !castMode && (
+        <button
+          onClick={openChat}
+          className="fixed z-40 flex items-center gap-2 px-4 py-3 rounded-full font-bold text-white shadow-lg transition-all active:scale-95"
+          style={{ bottom: 24, right: 20, background: "linear-gradient(135deg, #8B5CF6, #6d28d9)", boxShadow: "0 4px 20px rgba(139,92,246,0.5)", fontSize: 13 }}
+        >
+          <MessageSquare size={16} />
+          Cotizar evento
+        </button>
+      )}
+
+      {/* ── Chat modal ── */}
+      {chatOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "#12122a" }}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, #8B5CF6, #6d28d9)" }}>
+                <MessageSquare size={16} color="#fff" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-white">Asistente TioJohnny</p>
+                <p className="text-xs" style={{ color: "#22c55e" }}>● En línea</p>
+              </div>
+            </div>
+            <button onClick={() => setChatOpen(false)} className="p-2 rounded-xl" style={{ background: "#2a2a4a" }}>
+              <X size={18} color="#7878a0" />
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ overscrollBehavior: "contain" }}>
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className="max-w-xs rounded-2xl px-4 py-3 text-sm"
+                  style={{
+                    background: msg.role === "user" ? "#8B5CF6" : "#1e1e3a",
+                    color: "#fff",
+                    borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                    whiteSpace: "pre-wrap",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="flex justify-start">
+                <div className="px-4 py-3 rounded-2xl" style={{ background: "#1e1e3a", borderRadius: "18px 18px 18px 4px" }}>
+                  <div className="flex gap-1 items-center h-4">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: "#8B5CF6", animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="flex-shrink-0 px-4 py-3" style={{ borderTop: "1px solid rgba(139,92,246,0.15)", background: "#1a1a35" }}>
+            {chatCompleted ? (
+              <div className="text-center py-2">
+                <p className="text-sm font-semibold" style={{ color: "#22c55e" }}>✅ Cotización enviada</p>
+                <button onClick={() => { setChatOpen(false); setChatMessages([]); setChatCompleted(false); }} className="mt-2 text-xs px-4 py-2 rounded-full" style={{ background: "#2a2a4a", color: "#9898b0" }}>Cerrar</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                  placeholder="Escribe tu mensaje..."
+                  className="flex-1 px-4 py-3 rounded-2xl text-sm text-white outline-none"
+                  style={{ background: "#2a2a4a", border: "1px solid rgba(139,92,246,0.2)" }}
+                  autoFocus
+                />
+                <button
+                  onClick={() => sendChatMessage()}
+                  disabled={!chatInput.trim() || chatLoading}
+                  className="p-3 rounded-2xl transition-all active:scale-90"
+                  style={{ background: chatInput.trim() && !chatLoading ? "#8B5CF6" : "#2a2a4a" }}
+                >
+                  <Send size={18} color={chatInput.trim() && !chatLoading ? "#fff" : "#4a4a6a"} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
