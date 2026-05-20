@@ -1919,6 +1919,7 @@ export default function TioJohnny() {
   // ─── Event booking chat agent ──────────────────────────────────────
   const chatEndRef = useRef(null);
   const chatMsgsRef = useRef(null);
+  const chatModalRef = useRef(null);
   const CHAT_GREETING = "¡Hola! 👋 Soy el Tío Johnny. Estoy aquí para ayudarte a encontrar el talento perfecto para tu evento.\n\n¿Qué tipo de evento estás organizando?";
 
   const openChat = () => {
@@ -1979,38 +1980,35 @@ export default function TioJohnny() {
     if (chatMsgsRef.current) chatMsgsRef.current.scrollTop = chatMsgsRef.current.scrollHeight;
   };
   useEffect(() => { scrollChatToBottom(); }, [chatMessages, chatLoading]);
-  // Lock body scroll and track visual viewport position when chat is open
-  const [chatVpTop, setChatVpTop] = useState(0);
-  const [chatVpHeight, setChatVpHeight] = useState(null);
+  // Lock body scroll + track visual viewport directly on the DOM (no React state = no re-renders = no jitter)
   useEffect(() => {
     if (!chatOpen) {
       document.body.style.position = "";
       document.body.style.width = "";
       document.body.style.overflow = "";
-      setChatVpTop(0);
-      setChatVpHeight(null);
       return;
     }
-    // position:fixed on body is the only reliable way to stop Android scroll-on-focus
     document.body.style.position = "fixed";
     document.body.style.width = "100%";
     document.body.style.overflow = "hidden";
-    const update = () => {
+    const applyVp = () => {
+      const el = chatModalRef.current;
+      if (!el) return;
       const vp = window.visualViewport;
       if (vp) {
-        setChatVpTop(vp.offsetTop);
-        setChatVpHeight(vp.height);
+        el.style.top = `${vp.offsetTop}px`;
+        el.style.height = `${vp.height}px`;
       } else {
-        setChatVpTop(0);
-        setChatVpHeight(window.innerHeight);
+        el.style.top = "0px";
+        el.style.height = `${window.innerHeight}px`;
       }
     };
-    update();
-    window.visualViewport?.addEventListener("resize", update);
-    window.visualViewport?.addEventListener("scroll", update);
+    applyVp();
+    window.visualViewport?.addEventListener("resize", applyVp);
+    window.visualViewport?.addEventListener("scroll", applyVp);
     return () => {
-      window.visualViewport?.removeEventListener("resize", update);
-      window.visualViewport?.removeEventListener("scroll", update);
+      window.visualViewport?.removeEventListener("resize", applyVp);
+      window.visualViewport?.removeEventListener("scroll", applyVp);
       document.body.style.position = "";
       document.body.style.width = "";
       document.body.style.overflow = "";
@@ -4900,7 +4898,7 @@ export default function TioJohnny() {
 
       {/* ── Chat modal ── */}
       {chatOpen && (
-        <div className="fixed left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", top: `${chatVpTop}px`, height: chatVpHeight ? `${chatVpHeight}px` : "100dvh", transition: "top 0.15s ease-out, height 0.15s ease-out" }}>
+        <div ref={chatModalRef} className="fixed left-0 right-0 z-50 flex flex-col" style={{ background: "#12122a", top: 0, height: "100dvh" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(139,92,246,0.2)", background: "#1a1a35" }}>
             <div className="flex items-center gap-2.5">
