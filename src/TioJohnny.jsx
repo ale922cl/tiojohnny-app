@@ -608,6 +608,7 @@ export default function TioJohnny() {
   const [expandedChatLogs, setExpandedChatLogs] = useState({});
   const [chatSessions, setChatSessions] = useState([]);
   const [showSessions, setShowSessions] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState({});
   const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
@@ -3732,14 +3733,14 @@ export default function TioJohnny() {
               <h2 className="text-sm font-bold uppercase tracking-widest" style={{ color: "#22c55e" }}>Cotizaciones de Eventos</h2>
               <button onClick={fetchEventRequests} className="text-xs px-3 py-1.5 rounded-full" style={{ background: "#1e1e3a", color: "#7878a0" }}>Actualizar</button>
             </div>
-            {eventRequests.length === 0 ? (
+            {eventRequests.filter(r => r.status !== "archived").length === 0 ? (
               <div className="text-center py-16">
                 <MessageSquare size={40} className="mx-auto mb-3" style={{ color: "#2a2a4a" }} />
-                <p className="text-sm" style={{ color: "#6b6b90" }}>No hay cotizaciones aún.</p>
+                <p className="text-sm" style={{ color: "#6b6b90" }}>No hay cotizaciones activas.</p>
                 <p className="text-xs mt-1" style={{ color: "#4a4a6a" }}>Cuando alguien use el chat de eventos, aparecerá aquí.</p>
               </div>
             ) : (
-              eventRequests.map((req) => (
+              eventRequests.filter(r => r.status !== "archived").map((req) => (
                 <div key={req.id} className="rounded-2xl p-4 space-y-2" style={{ background: "#1e1e3a", border: req.status === "pending" ? "1px solid rgba(34,197,94,0.4)" : "1px solid transparent" }}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -3798,6 +3799,7 @@ export default function TioJohnny() {
                           <option value="pending">Nuevo</option>
                           <option value="contacted">Contactado</option>
                           <option value="closed">Cerrado</option>
+                          <option value="archived">📦 Archivar</option>
                         </select>
                       </div>
                     </div>
@@ -3834,6 +3836,50 @@ export default function TioJohnny() {
               ))
             )}
           </div>
+
+          {/* ── Archived events ── */}
+          {eventRequests.filter(r => r.status === "archived").length > 0 && (
+            <div className="px-4 pb-2">
+              <button
+                onClick={() => setShowArchived((s) => !s)}
+                className="w-full text-xs py-2 rounded-xl flex items-center justify-center gap-2"
+                style={{ background: "#1a1a2e", color: "#4a4a6a" }}
+              >
+                <Archive size={13} />
+                {showArchived ? "▲ Ocultar archivados" : `▼ Ver archivados (${eventRequests.filter(r => r.status === "archived").length})`}
+              </button>
+              {showArchived && (
+                <div className="mt-3 space-y-3 opacity-60">
+                  {eventRequests.filter(r => r.status === "archived").map((req) => (
+                    <div key={req.id} className="rounded-2xl p-4 space-y-2" style={{ background: "#1a1a2e", border: "1px solid #1e1e3a" }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-white">{req.event_type || "Evento"}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "#7878a0" }}>{new Date(req.created_at).toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                        </div>
+                        <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: "rgba(100,100,100,0.15)", color: "#4a4a6a" }}>Archivado</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs" style={{ color: "#6b6b90" }}>
+                        {req.event_date && <p>📅 {req.event_date}</p>}
+                        {req.location && <p>📍 {req.location}</p>}
+                        {req.talent_count && <p>👯 {req.talent_count} talento(s)</p>}
+                        {req.duration && <p>⏱ {req.duration}</p>}
+                        {req.budget && <p>💰 {req.budget}</p>}
+                      </div>
+                      {(req.contact_name || req.contact_phone) && (
+                        <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.03)" }}>
+                          <p className="text-xs" style={{ color: "#6b6b90" }}>{req.contact_name} · {req.contact_phone}</p>
+                          <button onClick={async () => { await supabase.from("event_requests").update({ status: "pending" }).eq("id", req.id); fetchEventRequests(); }} className="text-xs px-2 py-1 rounded-full" style={{ background: "#1e1e3a", color: "#7878a0" }}>
+                            Restaurar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── All chat sessions log ── */}
           <div className="px-4 pb-4">
