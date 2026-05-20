@@ -76,14 +76,66 @@ function generatePlaceholderSvg(id) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 
+// Burn "tiojohnny.cl" watermark onto a photo file via Canvas and return a new Blob
+async function applyWatermark(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+
+      // Draw original image
+      ctx.drawImage(img, 0, 0);
+
+      // ── Watermark config ──────────────────────────────────────────────────
+      const shortSide = Math.min(canvas.width, canvas.height);
+      const fontSize = Math.round(shortSide * 0.048); // ~5% of shorter dimension
+      const padding = Math.round(shortSide * 0.03);
+
+      ctx.save();
+
+      // Soft dark shadow so text reads on both light and dark photos
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = Math.round(fontSize * 0.5);
+      ctx.shadowOffsetX = Math.round(fontSize * 0.06);
+      ctx.shadowOffsetY = Math.round(fontSize * 0.06);
+
+      // Text style
+      ctx.font = `700 ${fontSize}px 'Sora', 'Arial', sans-serif`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+
+      // Semi-transparent white — visible but not overpowering
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("tiojohnny.cl", canvas.width - padding, canvas.height - padding);
+
+      ctx.restore();
+
+      canvas.toBlob(
+        (blob) => blob ? resolve(new File([blob], file.name, { type: "image/jpeg" })) : reject(new Error("Canvas toBlob failed")),
+        "image/jpeg",
+        0.88
+      );
+    };
+    img.onerror = reject;
+    img.src = objectUrl;
+  });
+}
+
 // Upload a photo to Supabase Storage and return its public URL
 async function uploadPhoto(file, talentId) {
-  const ext = file.name.split(".").pop();
+  const watermarked = await applyWatermark(file);
+  const ext = "jpg"; // canvas always outputs jpeg
   const fileName = `${talentId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 
   const { data, error } = await supabase.storage
     .from("talent-photos")
-    .upload(fileName, file, { cacheControl: "31536000", upsert: false }); // 1 year — filenames are unique
+    .upload(fileName, watermarked, { cacheControl: "31536000", upsert: false }); // 1 year — filenames are unique
 
   if (error) throw error;
 
