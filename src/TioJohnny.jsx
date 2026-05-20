@@ -2021,7 +2021,7 @@ export default function TioJohnny() {
             messages: newMessages, status: "pending",
           }]);
           setChatCompleted(true);
-          const completedMsg = `¡Todo listo, ${eventData.nombre}! 🎉\n\nTu solicitud quedó registrada. Vamos a revisar la disponibilidad de los talentos y te escribimos por WhatsApp al ${eventData.telefono} con la cotización y los detalles confirmados.\n\n¡Gracias por confiar en TioJohnny.cl! 💜`;
+          const completedMsg = `¡Todo listo, ${eventData.nombre}! 🎉\n\nTu solicitud quedó registrada. Vamos a revisar la disponibilidad de las modelos y te escribimos por WhatsApp al ${eventData.telefono} con la cotización y los detalles confirmados.\n\n¡Gracias por confiar en TioJohnny.cl! 💜`;
           setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: completedMsg }]);
           await updateSession([...newMessages, { role: "assistant", content: completedMsg }], "completed");
         } catch (_) {
