@@ -603,8 +603,12 @@ export default function TioJohnny() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatCompleted, setChatCompleted] = useState(false);
+  const chatSessionId = useRef(null);
   const [eventRequests, setEventRequests] = useState([]);
   const [expandedChatLogs, setExpandedChatLogs] = useState({});
+  const [chatSessions, setChatSessions] = useState([]);
+  const [showSessions, setShowSessions] = useState(false);
+  const [expandedSessions, setExpandedSessions] = useState({});
   const [promoLoading, setPromoLoading] = useState(false);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -1923,11 +1927,25 @@ export default function TioJohnny() {
   const chatModalRef = useRef(null);
   const CHAT_GREETING = "¡Hola! 👋 Soy el Tío Johnny. Estoy aquí para ayudarte a encontrar el talento perfecto para tu evento.\n\n¿Qué tipo de evento estás organizando?";
 
-  const openChat = () => {
+  const openChat = async () => {
+    const greeting = [{ role: "assistant", content: CHAT_GREETING }];
     if (chatMessages.length === 0) {
-      setChatMessages([{ role: "assistant", content: CHAT_GREETING }]);
+      setChatMessages(greeting);
+      // Create a new session row
+      const { data } = await supabase.from("chat_sessions").insert([{ messages: greeting, status: "active" }]).select("id").single();
+      if (data) chatSessionId.current = data.id;
     }
     setChatOpen(true);
+  };
+
+  const updateSession = async (msgs, status) => {
+    if (!chatSessionId.current) return;
+    await supabase.from("chat_sessions").update({ messages: msgs, status, updated_at: new Date().toISOString() }).eq("id", chatSessionId.current);
+  };
+
+  const closeChat = async () => {
+    if (!chatCompleted) await updateSession(chatMessages, "abandoned");
+    setChatOpen(false);
   };
 
   const sendChatMessage = async (text) => {
@@ -1982,6 +2000,9 @@ export default function TioJohnny() {
         }
       }
 
+      // Update session with latest messages after each exchange
+      const finalMsgs = [...newMessages, { role: "assistant", content: fullText }];
+
       // Check if completed booking
       if (fullText.startsWith("COTIZACIÓN_LISTA|")) {
         const jsonStr = fullText.slice("COTIZACIÓN_LISTA|".length).trim();
@@ -1997,10 +2018,15 @@ export default function TioJohnny() {
             messages: newMessages, status: "pending",
           }]);
           setChatCompleted(true);
-          setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: `¡Listo! 🎉 Tu cotización quedó registrada. Nos contactaremos contigo al ${eventData.telefono} a la brevedad.\n\n¡Gracias por confiar en TioJohnny.cl! 💜` }]);
+          const completedMsg = `¡Listo! 🎉 Tu cotización quedó registrada. Nos contactaremos contigo al ${eventData.telefono} a la brevedad.\n\n¡Gracias por confiar en TioJohnny.cl! 💜`;
+          setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: completedMsg }]);
+          await updateSession([...newMessages, { role: "assistant", content: completedMsg }], "completed");
         } catch (_) {
           setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: "¡Tu cotización está casi lista! Hubo un pequeño error al guardarla — por favor intenta enviar el mensaje de confirmación de nuevo." }]);
+          await updateSession(finalMsgs, "active");
         }
+      } else {
+        await updateSession(finalMsgs, "active");
       }
     } catch (_) {
       setChatMessages((prev) => [...prev.slice(0, -1), { role: "assistant", content: "Hubo un error de conexión. Por favor intenta de nuevo. 😅" }]);
@@ -2011,6 +2037,11 @@ export default function TioJohnny() {
   const fetchEventRequests = async () => {
     const { data } = await supabase.from("event_requests").select("*").order("created_at", { ascending: false });
     if (data) setEventRequests(data);
+  };
+
+  const fetchChatSessions = async () => {
+    const { data } = await supabase.from("chat_sessions").select("*").order("created_at", { ascending: false }).limit(100);
+    if (data) setChatSessions(data);
   };
 
   const scrollChatToBottom = () => {
@@ -3803,6 +3834,72 @@ export default function TioJohnny() {
               ))
             )}
           </div>
+
+          {/* ── All chat sessions log ── */}
+          <div className="px-4 pb-4">
+            <button
+              onClick={() => { setShowSessions((s) => !s); if (!showSessions) fetchChatSessions(); }}
+              className="w-full text-xs py-2 rounded-xl flex items-center justify-center gap-2"
+              style={{ background: "#1e1e3a", color: "#7878a0" }}
+            >
+              <MessageSquare size={13} />
+              {showSessions ? "▲ Ocultar historial de conversaciones" : "▼ Ver todas las conversaciones iniciadas"}
+            </button>
+            {showSessions && (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#6b6b90" }}>
+                    {chatSessions.length} conversaciones
+                  </p>
+                  <button onClick={fetchChatSessions} className="text-xs px-2 py-1 rounded-full" style={{ background: "#1e1e3a", color: "#7878a0" }}>Actualizar</button>
+                </div>
+                {chatSessions.map((session) => {
+                  const statusColor = session.status === "completed" ? "#22c55e" : session.status === "abandoned" ? "#f97316" : "#8B5CF6";
+                  const statusLabel = session.status === "completed" ? "Completada" : session.status === "abandoned" ? "Abandonada" : "Activa";
+                  const msgCount = session.messages?.length || 0;
+                  const lastMsg = session.messages?.[msgCount - 1];
+                  return (
+                    <div key={session.id} className="rounded-xl p-3" style={{ background: "#1e1e3a" }}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: `${statusColor}20`, color: statusColor }}>{statusLabel}</span>
+                          <span className="text-xs" style={{ color: "#6b6b90" }}>{msgCount} mensajes</span>
+                        </div>
+                        <span className="text-xs" style={{ color: "#4a4a6a" }}>{new Date(session.created_at).toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                      {lastMsg && (
+                        <p className="text-xs truncate mb-1.5" style={{ color: "#7878a0" }}>
+                          Último: "{String(lastMsg.content).slice(0, 60)}{lastMsg.content?.length > 60 ? "…" : ""}"
+                        </p>
+                      )}
+                      <button
+                        onClick={() => setExpandedSessions((prev) => ({ ...prev, [session.id]: !prev[session.id] }))}
+                        className="text-xs" style={{ color: "#4a4a6a" }}
+                      >
+                        {expandedSessions[session.id] ? "▲ Ocultar" : "▼ Ver chat"}
+                      </button>
+                      {expandedSessions[session.id] && (
+                        <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto">
+                          {session.messages?.map((msg, i) => (
+                            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                              <div className="text-xs px-3 py-1.5 rounded-xl max-w-[85%]" style={{
+                                background: msg.role === "user" ? "rgba(139,92,246,0.2)" : "#12122a",
+                                color: msg.role === "user" ? "#c4b5fd" : "#9898b0",
+                                whiteSpace: "pre-wrap",
+                                borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
+                              }}>
+                                {msg.content}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ═══ PROFILES TAB ═══ */}
@@ -5014,7 +5111,7 @@ export default function TioJohnny() {
                 <p className="text-xs" style={{ color: "#22c55e" }}>● En línea</p>
               </div>
             </div>
-            <button onClick={() => setChatOpen(false)} className="p-2 rounded-xl" style={{ background: "#2a2a4a" }}>
+            <button onClick={closeChat} className="p-2 rounded-xl" style={{ background: "#2a2a4a" }}>
               <X size={18} color="#7878a0" />
             </button>
           </div>
@@ -5056,7 +5153,7 @@ export default function TioJohnny() {
             {chatCompleted ? (
               <div className="text-center py-2">
                 <p className="text-sm font-semibold" style={{ color: "#22c55e" }}>✅ Cotización enviada</p>
-                <button onClick={() => { setChatOpen(false); setChatMessages([]); setChatCompleted(false); }} className="mt-2 text-xs px-4 py-2 rounded-full" style={{ background: "#2a2a4a", color: "#9898b0" }}>Cerrar</button>
+                <button onClick={() => { setChatOpen(false); setChatMessages([]); setChatCompleted(false); chatSessionId.current = null; }} className="mt-2 text-xs px-4 py-2 rounded-full" style={{ background: "#2a2a4a", color: "#9898b0" }}>Cerrar</button>
               </div>
             ) : (
               <div className="flex gap-2">
