@@ -1531,7 +1531,7 @@ export default function TioJohnny() {
 
     // Leaderboards — derived from server-side counts so they always match the heatmap
     const topViewed    = Object.entries(heatMap).map(([id, d]) => [id, d.views]).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    const topFavorited = Object.entries(heatMap).map(([id, d]) => [id, d.favs]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const topFavorited = Object.entries(heatMap).map(([id, d]) => [id, d.favs + d.likes]).sort((a, b) => b[1] - a[1]).slice(0, 10);
     const topShared    = Object.entries(heatMap).map(([id, d]) => [id, d.shares]).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     // ── Unique REAL visitors (by visitor_id cookie, falls back to session_id for old data) ──
