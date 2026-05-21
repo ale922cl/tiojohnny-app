@@ -1523,10 +1523,11 @@ export default function TioJohnny() {
     // r === "all": no date filter
 
     // Run all queries in parallel:
-    // 1) main events (categories, devices, daily chart, bounce rate — row-limited but ok for these)
+    // 1) main events (categories, devices, bounce rate — row-limited but ok for these)
     // 2) server-side exact visitor/session counts (no row limit)
     // 3) server-side aggregated talent counts (leaderboards + heatmap)
-    const [{ data: events }, { data: visitorStats }, { data: heatRows }] = await Promise.all([
+    // 4) daily chart — dedicated query, only visitor_id + created_at, always last 7 days, high limit
+    const [{ data: events }, { data: visitorStats }, { data: heatRows }, { data: dailyRaw }] = await Promise.all([
       query,
       supabase.rpc("get_unique_visitor_counts", {
         p_today: todayStart,
@@ -1534,6 +1535,10 @@ export default function TioJohnny() {
         p_month: r === "30" ? monthAgo : r === "custom" && cf ? santiagoDateToUTC(cf, "start") : null,
       }),
       supabase.rpc("get_heatmap_counts", { p_from: rpcFrom, p_to: rpcTo }),
+      supabase.from("analytics_events")
+        .select("created_at, visitor_id, session_id")
+        .gte("created_at", weekAgo)
+        .limit(50000),
     ]);
 
     if (!events) { setAnalyticsLoading(false); return; }
@@ -1589,14 +1594,15 @@ export default function TioJohnny() {
     catEvents.forEach((e) => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
     const topCategories = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // Daily visitors (last 7 days) — by real visitor_id, using Santiago dates
+    // Daily visitors (last 7 days) — uses dedicated dailyRaw query (not row-limited by main events fetch)
+    const dailySource = dailyRaw || [];
     const dailyVisitors = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
       const dayStr = d.toLocaleDateString("en-CA", { timeZone: "America/Santiago" }); // "YYYY-MM-DD" in Santiago tz
       const dayStart = new Date(santiagoDateToUTC(dayStr, "start")).getTime();
       const dayEnd   = new Date(santiagoDateToUTC(dayStr, "end")).getTime();
-      const dayVids = new Set(events.filter((e) => { const t = new Date(e.created_at).getTime(); return t >= dayStart && t <= dayEnd; }).map(getVid));
+      const dayVids = new Set(dailySource.filter((e) => { const t = new Date(e.created_at).getTime(); return t >= dayStart && t <= dayEnd; }).map(getVid));
       dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: dayVids.size });
     }
 
