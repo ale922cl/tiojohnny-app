@@ -1523,10 +1523,11 @@ export default function TioJohnny() {
     // r === "all": no date filter
 
     // Run all queries in parallel:
-    // 1) main events — newest 10k rows (enough for daily chart + engagement metrics)
+    // 1) main events — newest 10k rows (engagement metrics, bounce rate, devices)
     // 2) server-side exact visitor/session counts (no row limit)
     // 3) server-side aggregated talent counts (leaderboards + heatmap)
-    const [{ data: events }, { data: visitorStats }, { data: heatRows }] = await Promise.all([
+    // 4) server-side daily visitor counts (aggregated, bypasses row limits entirely)
+    const [{ data: events }, { data: visitorStats }, { data: heatRows }, { data: dailyCounts }] = await Promise.all([
       query,
       supabase.rpc("get_unique_visitor_counts", {
         p_today: todayStart,
@@ -1534,6 +1535,7 @@ export default function TioJohnny() {
         p_month: r === "30" ? monthAgo : r === "custom" && cf ? santiagoDateToUTC(cf, "start") : null,
       }),
       supabase.rpc("get_heatmap_counts", { p_from: rpcFrom, p_to: rpcTo }),
+      supabase.rpc("get_daily_visitor_counts"),
     ]);
 
     if (!events) { setAnalyticsLoading(false); return; }
@@ -1589,15 +1591,14 @@ export default function TioJohnny() {
     catEvents.forEach((e) => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
     const topCategories = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // Daily visitors (last 7 days) — newest-first events with 10k limit covers all recent days
+    // Daily visitors (last 7 days) — from server-side RPC, no row limits
+    const dailyCountMap = {};
+    (dailyCounts || []).forEach((row) => { dailyCountMap[row.day_label] = Number(row.visitor_count); });
     const dailyVisitors = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
       const dayStr = d.toLocaleDateString("en-CA", { timeZone: "America/Santiago" }); // "YYYY-MM-DD" in Santiago tz
-      const dayStart = new Date(santiagoDateToUTC(dayStr, "start")).getTime();
-      const dayEnd   = new Date(santiagoDateToUTC(dayStr, "end")).getTime();
-      const dayVids = new Set(events.filter((e) => { const t = new Date(e.created_at).getTime(); return t >= dayStart && t <= dayEnd; }).map(getVid));
-      dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: dayVids.size });
+      dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: dailyCountMap[dayStr] || 0 });
     }
 
     // ── NEW METRICS ──
