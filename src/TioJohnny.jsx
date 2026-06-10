@@ -246,6 +246,14 @@ const ANIM_CSS = `
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+@keyframes prideShift {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes prideCoach {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
 @keyframes pillPop {
   0%   { transform: scale(1); }
   50%  { transform: scale(1.12); }
@@ -529,6 +537,13 @@ export default function TioJohnny() {
   // ─── Public state ──────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState("Todas");
   const [siteSection, setSiteSection] = useState("main"); // public site: "main" | "lgbtq"
+  const [showFlagCoach, setShowFlagCoach] = useState(() => {
+    try { return !localStorage.getItem("tj_lgbtq_coach_seen"); } catch (_) { return false; }
+  });
+  const dismissFlagCoach = () => {
+    try { localStorage.setItem("tj_lgbtq_coach_seen", "1"); } catch (_) {}
+    setShowFlagCoach(false);
+  };
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -673,6 +688,7 @@ export default function TioJohnny() {
   const [regSizes, setRegSizes] = useState("");
   const [regInstagram, setRegInstagram] = useState("");
   const [regSpecialty, setRegSpecialty] = useState("");
+  const [regSection, setRegSection] = useState("main"); // which site section the applicant wants to appear in
   const [regUploading, setRegUploading] = useState(false);
   const [regSubmitting, setRegSubmitting] = useState(false);
   const [regSuccess, setRegSuccess] = useState(false);
@@ -839,6 +855,8 @@ export default function TioJohnny() {
     const openFromHash = () => {
       const hash = window.location.hash;
       if (hash === "#/registro") { setView("registro"); return; }
+      if (hash === "#/lgbtq") { setSiteSection("lgbtq"); setSelectedTalent(null); setView("public"); return; }
+      if (hash === "" || hash === "#" || hash === "#/") { setSiteSection("main"); }
       const idMatch = hash.match(/^#\/modelo\/(\d+)$/);
       const slugMatch = !idMatch && hash.match(/^#\/([a-z0-9-]+)$/);
       const found = idMatch
@@ -1435,6 +1453,7 @@ export default function TioJohnny() {
       sizes: regSizes.trim(),
       instagram: regInstagram.trim() ? fmtInstagram(regInstagram) : "",
       specialty: regSpecialty.trim(),
+      section: regSection,
       status: "pendiente",
       sort_order: maxOrder + 1,
       archived: false,
@@ -1631,14 +1650,24 @@ export default function TioJohnny() {
     catEvents.forEach((e) => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
     const topCategories = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // Daily visitors (last 7 days) — from server-side RPC, no row limits
-    const dailyCountMap = {};
-    (dailyCounts || []).forEach((row) => { dailyCountMap[row.day_label] = Number(row.visitor_count); });
+    // Daily visitors (last 7 days) — computed client-side from events, bucketed
+    // in Santiago tz. (The get_daily_visitor_counts RPC bucketed days in a
+    // different tz/format, so the key lookup missed and most days read 0.)
+    // 7 days of traffic is far below the 10k row cap, so this is exact.
+    const dayVisitorSets = {}; // "YYYY-MM-DD" (Santiago) -> Set of visitor ids
+    events.forEach((e) => {
+      let ds;
+      try { ds = new Date(e.created_at).toLocaleDateString("en-CA", { timeZone: "America/Santiago" }); } catch (_) { return; }
+      (dayVisitorSets[ds] = dayVisitorSets[ds] || new Set()).add(getVid(e));
+    });
     const dailyVisitors = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now - i * 86400000);
       const dayStr = d.toLocaleDateString("en-CA", { timeZone: "America/Santiago" }); // "YYYY-MM-DD" in Santiago tz
-      dailyVisitors.push({ day: d.toLocaleDateString("es-CL", { weekday: "short" }), count: dailyCountMap[dayStr] || 0 });
+      dailyVisitors.push({
+        day: d.toLocaleDateString("es-CL", { weekday: "short", timeZone: "America/Santiago" }),
+        count: dayVisitorSets[dayStr] ? dayVisitorSets[dayStr].size : 0,
+      });
     }
 
     // ── NEW METRICS ──
@@ -2156,8 +2185,26 @@ export default function TioJohnny() {
     setSwipeIndex(0);
     setCardAnimKey((k) => k + 1);
     try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+    // Update URL hash so the section is shareable / indexable
+    try {
+      if (sec === "lgbtq") window.location.hash = "#/lgbtq";
+      else if (window.location.hash === "#/lgbtq") history.replaceState(null, "", window.location.pathname);
+    } catch (_) {}
     trackEvent("section_view", null, sec);
   };
+
+  // SEO: reflect the active section in the document title + meta description
+  useEffect(() => {
+    try {
+      if (siteSection === "lgbtq") {
+        document.title = "TioJohnny.cl LGBTQ+ — Talento Gay y Trans para Eventos en Chile";
+        document.querySelector('meta[name="description"]')?.setAttribute("content", "Modelos y talentos gay, trans y LGBTQ+ para fiestas, despedidas y eventos en Chile. Para toda fiesta, toda persona.");
+      } else {
+        document.title = "TioJohnny.cl — Modelos y Talentos para Eventos en Chile";
+        document.querySelector('meta[name="description"]')?.setAttribute("content", "Directorio de modelos, animadoras y talentos para eventos corporativos, fiestas privadas, despedidas de soltero y soltera, desfiles y sesiones fotográficas en Chile. Contrata fácil y rápido.");
+      }
+    } catch (_) {}
+  }, [siteSection]);
 
   // ─── Ambient color extraction from image ──────────────────────────
   const extractAmbientColor = useCallback((imgSrc) => {
@@ -3206,6 +3253,29 @@ export default function TioJohnny() {
               </button>
             </div>
             <input ref={regFileRef} type="file" accept="image/*" multiple onChange={handleRegPhotoUpload} className="hidden" />
+          </Field>
+
+          {/* Section choice */}
+          <Field label="¿En qué sección quieres aparecer?">
+            <div className="flex gap-2">
+              {[
+                { key: "main", label: "Principal" },
+                { key: "lgbtq", label: "🏳️‍🌈 LGBTQ+" },
+              ].map((s) => {
+                const on = regSection === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setRegSection(s.key)}
+                    className="flex-1 px-4 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                    style={{ background: on ? "#8B5CF6" : "#1e1e3a", color: on ? "#fff" : "#9898b0", border: on ? "none" : "1px solid #2a2a4a" }}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
           </Field>
 
           {/* Mandatory fields */}
@@ -4439,7 +4509,7 @@ export default function TioJohnny() {
       <div className={`fixed inset-0 z-50 flex flex-col md:items-center md:justify-center md:p-6 ${modalClosing ? "modal-exit" : "modal-enter"}`} style={{ background: "rgba(0,0,0,0.7)" }}>
         <div className="flex flex-col w-full h-full md:h-[92vh] md:max-w-2xl md:rounded-3xl md:overflow-hidden relative" style={{ background: "#12122a" }}>
         {/* ── Ambient color glow — radiates from behind the hero image ── */}
-        <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{ height: "65vh", background: `radial-gradient(ellipse at 50% 30%, ${ambientColor} 0%, transparent 70%)`, transition: "background 0.8s ease", zIndex: 0 }} />
+        <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{ height: "65vh", background: siteSection === "lgbtq" ? "radial-gradient(ellipse at 50% 30%, rgba(228,3,3,0.10) 0%, rgba(0,77,255,0.12) 45%, rgba(117,7,135,0.10) 65%, transparent 78%)" : `radial-gradient(ellipse at 50% 30%, ${ambientColor} 0%, transparent 70%)`, transition: "background 0.8s ease", zIndex: 0 }} />
 
         <div ref={profileScrollRef} className="flex-1 overflow-y-auto" onScroll={handleProfileScroll} style={{ position: "relative", zIndex: 1 }}>
           {/* ── Hero image with parallax + blur reveal + crossfade ── */}
@@ -4700,6 +4770,10 @@ export default function TioJohnny() {
   // ═════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
+      {/* Rainbow ambient glow for the LGBTQ+ section */}
+      {siteSection === "lgbtq" && (
+        <div className="fixed top-0 left-0 right-0 pointer-events-none" style={{ height: "55vh", zIndex: 0, background: "radial-gradient(ellipse at 50% 0%, rgba(228,3,3,0.10) 0%, rgba(0,77,255,0.12) 40%, rgba(117,7,135,0.10) 60%, transparent 78%)" }} />
+      )}
       <header className="sticky top-0 z-40" style={{ background: "rgba(18,18,42,0.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
         <div className="flex items-center justify-between px-4 py-3 max-w-screen-xl mx-auto">
         {searchOpen ? (
@@ -4737,22 +4811,45 @@ export default function TioJohnny() {
           </div>
         ) : (
           <>
-            <h1 style={{ fontFamily: "'Sora', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" }}>
-              <span style={{ color: "#8B5CF6" }}>Tio</span><span style={{ color: "#fff" }}>Johnny</span>
-              <span style={{ fontWeight: 400, fontSize: 11, color: "#6b6b90", marginLeft: 3 }}>.cl</span>
-            </h1>
+            <div>
+              <h1 style={{ fontFamily: "'Sora', sans-serif", fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px", lineHeight: 1 }}>
+                <span style={{ color: "#8B5CF6" }}>Tio</span><span style={{ color: "#fff" }}>Johnny</span>
+                <span style={{ fontWeight: 400, fontSize: 11, color: "#6b6b90", marginLeft: 3 }}>.cl</span>
+              </h1>
+              {siteSection === "lgbtq" && (
+                <>
+                  <div style={{ height: 3, borderRadius: 2, marginTop: 3, background: "linear-gradient(90deg,#e40303,#ff8c00,#ffed00,#008026,#004dff,#750787)", backgroundSize: "200% 100%", animation: "prideShift 6s linear infinite" }} />
+                  <p style={{ fontSize: 10, color: "#bdbdd6", marginTop: 3, fontWeight: 600, letterSpacing: "0.2px" }}>Para toda fiesta, toda persona.</p>
+                </>
+              )}
+            </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => switchSiteSection(siteSection === "main" ? "lgbtq" : "main")}
-                className="p-1.5 rounded-full transition-all active:scale-90"
-                title={siteSection === "main" ? "Ver sección LGBTQ+" : "Volver al sitio principal"}
-                style={{
-                  background: siteSection === "lgbtq" ? "linear-gradient(90deg, #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787)" : "transparent",
-                  border: siteSection === "lgbtq" ? "none" : "1px solid #2a2a4a",
-                }}
-              >
-                <span style={{ fontSize: 18, lineHeight: 1 }}>🏳️‍🌈</span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => { dismissFlagCoach(); switchSiteSection(siteSection === "main" ? "lgbtq" : "main"); }}
+                  className="p-1.5 rounded-full transition-all active:scale-90 block"
+                  title={siteSection === "main" ? "Ver sección LGBTQ+" : "Volver al sitio principal"}
+                  style={{
+                    background: siteSection === "lgbtq" ? "linear-gradient(90deg, #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787)" : "transparent",
+                    border: siteSection === "lgbtq" ? "none" : "1px solid #2a2a4a",
+                    boxShadow: showFlagCoach && siteSection === "main" ? "0 0 0 3px rgba(139,92,246,0.35)" : "none",
+                  }}
+                >
+                  <span style={{ fontSize: 18, lineHeight: 1 }}>🏳️‍🌈</span>
+                </button>
+                {showFlagCoach && siteSection === "main" && (
+                  <div
+                    className="absolute right-0 mt-2 z-50"
+                    style={{ top: "100%", width: 184, animation: "prideCoach 1.8s ease-in-out infinite" }}
+                  >
+                    <div className="rounded-xl p-2.5 text-left" style={{ background: "#1e1e3a", border: "1px solid rgba(139,92,246,0.4)", boxShadow: "0 8px 28px rgba(0,0,0,0.5)" }}>
+                      <p className="text-xs font-bold text-white leading-snug">¿Buscas talento LGBTQ+? 🏳️‍🌈</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: "#9898b0" }}>Toca la bandera para explorar la sección.</p>
+                      <button onClick={(e) => { e.stopPropagation(); dismissFlagCoach(); }} className="text-[11px] font-semibold mt-1.5" style={{ color: "#8B5CF6" }}>Entendido</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <button onClick={() => setSearchOpen(true)} className="p-2">
                 <Search size={20} color="#8B5CF6" />
               </button>
@@ -4764,6 +4861,11 @@ export default function TioJohnny() {
         )}
         </div>
       </header>
+
+      {/* ── Animated rainbow accent bar (LGBTQ+) ── */}
+      {siteSection === "lgbtq" && (
+        <div style={{ height: 3, background: "linear-gradient(90deg,#e40303,#ff8c00,#ffed00,#008026,#004dff,#750787,#e40303)", backgroundSize: "200% 100%", animation: "prideShift 6s linear infinite" }} />
+      )}
 
       {/* ── LGBTQ+ section banner ── */}
       {siteSection === "lgbtq" && (
@@ -5061,6 +5163,24 @@ export default function TioJohnny() {
               <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No se encontraron modelos.</p>
               <button onClick={() => { switchCategory("Todas"); setSearchQuery(""); }} className="mt-3 text-xs font-semibold px-4 py-2 rounded-full" style={{ background: "#8B5CF6", color: "#fff" }}>
                 Ver todas
+              </button>
+            </div>
+          )}
+
+          {/* ── Promo card: discover the LGBTQ+ section ── */}
+          {siteSection === "main" && filtered.length > 0 && (
+            <div className="px-4 pb-8 pt-2 max-w-screen-xl mx-auto">
+              <button
+                onClick={() => switchSiteSection("lgbtq")}
+                className="w-full rounded-2xl p-4 flex items-center gap-3 text-left transition-transform active:scale-[0.98]"
+                style={{ background: "linear-gradient(90deg, rgba(228,3,3,0.14), rgba(255,140,0,0.12), rgba(0,128,38,0.12), rgba(0,77,255,0.14), rgba(117,7,135,0.14))", border: "1px solid rgba(139,92,246,0.3)" }}
+              >
+                <span style={{ fontSize: 30, lineHeight: 1 }}>🏳️‍🌈</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white">¿Buscas algo diferente?</p>
+                  <p className="text-xs mt-0.5" style={{ color: "#cfcfe6" }}>Explora nuestra sección LGBTQ+ — talento gay y trans para tu evento.</p>
+                </div>
+                <ChevronRight size={20} color="#fff" />
               </button>
             </div>
           )}
