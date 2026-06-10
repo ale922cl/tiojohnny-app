@@ -528,6 +528,7 @@ export default function TioJohnny() {
 
   // ─── Public state ──────────────────────────────────────────────────────
   const [activeCategory, setActiveCategory] = useState("Todas");
+  const [siteSection, setSiteSection] = useState("main"); // public site: "main" | "lgbtq"
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -568,6 +569,7 @@ export default function TioJohnny() {
   const [formName, setFormName] = useState("");
   const [formSpecialty, setFormSpecialty] = useState("");
   const [formCategories, setFormCategories] = useState([]);
+  const [formSection, setFormSection] = useState("main"); // editor: which site section this talent belongs to
   const [formRate, setFormRate] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formLocation, setFormLocation] = useState("");
@@ -597,6 +599,9 @@ export default function TioJohnny() {
 
   // ─── Analytics state ───────────────────────────────────────────────
   const [adminTab, setAdminTab] = useState("profiles"); // "profiles" | "pendientes" | "analytics" | "cotizaciones"
+  const [adminSection, setAdminSection] = useState("main"); // admin profiles tab: which section is being managed
+  const [dragId, setDragId] = useState(null);       // talent id being dragged in admin reorder
+  const [dragOverId, setDragOverId] = useState(null); // talent id currently hovered during drag
   // ── Event booking chat agent ──
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
@@ -778,15 +783,17 @@ export default function TioJohnny() {
   // ─── Currency formatter ───────────────────────────────────────────
   const formatRate = useCallback((rateStr) => {
     try {
-      if (!rateStr || currency === "CLP") return rateStr || "";
-      const cleaned = String(rateStr).replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".");
+      if (!rateStr) return "";
+      // Drop any "/hr" (or other "/ ...") suffix — public site shows price only
+      const base = String(rateStr).split("/")[0].trim();
+      if (currency === "CLP") return base;
+      const cleaned = base.replace(/[^0-9.,]/g, "").replace(/\./g, "").replace(",", ".");
       const num = parseFloat(cleaned);
-      if (isNaN(num)) return rateStr;
+      if (isNaN(num)) return base;
       const converted = num * (exchangeRates[currency] || 1);
-      const suffix = rateStr.includes("/") ? " / " + rateStr.split("/").pop().trim() : "";
-      if (currency === "USD") return "$" + Math.round(converted) + " USD" + suffix;
-      if (currency === "EUR") return "€" + Math.round(converted) + suffix;
-      return rateStr;
+      if (currency === "USD") return "$" + Math.round(converted) + " USD";
+      if (currency === "EUR") return "€" + Math.round(converted);
+      return base;
     } catch (_) { return rateStr || ""; }
   }, [currency, exchangeRates]);
 
@@ -872,15 +879,19 @@ export default function TioJohnny() {
     if (!error && data) setCategories(data);
   };
 
-  // Derived arrays for UI
+  // Derived arrays for UI (categories are scoped per site section)
+  const sectionCategories = (sec) => categories.filter((c) => (c.section || "main") === sec);
   const categoryNames = categories.map((c) => c.name);
-  const publicCategories = ["Todas", "Favoritas", ...categoryNames];
+  const publicCategoryNames = sectionCategories(siteSection).map((c) => c.name);
+  const publicCategories = ["Todas", "Favoritas", ...publicCategoryNames];
+  const editorCategoryNames = sectionCategories(formSection).map((c) => c.name);
+  const adminCategoryList = sectionCategories(adminSection);
 
   // ─── Category management handlers ─────────────────────────────────────
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     const nextOrder = categories.length > 0 ? Math.max(...categories.map((c) => c.sort_order)) + 1 : 1;
-    await supabase.from("categories").insert([{ name: newCategoryName.trim(), sort_order: nextOrder }]);
+    await supabase.from("categories").insert([{ name: newCategoryName.trim(), sort_order: nextOrder, section: adminSection }]);
     setNewCategoryName("");
     await fetchCategories();
   };
@@ -1085,6 +1096,7 @@ export default function TioJohnny() {
   const filtered = talents.filter((t) => {
     if (t.archived) return false;
     if (t.status === "pendiente") return false;
+    if ((t.section || "main") !== siteSection) return false; // only show current site section
     const talentCats = getTalentCategories(t);
     const matchCat = activeCategory === "Todas" || (activeCategory === "Favoritas" ? favorites.includes(t.id) : talentCats.includes(activeCategory));
     const q = searchQuery.toLowerCase();
@@ -1163,6 +1175,7 @@ export default function TioJohnny() {
       setFormNationality(talent.nationality || "");
       setFormPhotos(talent.photos || []);
       setFormInstagram(talent.instagram || "");
+      setFormSection(talent.section || "main");
     } else {
       setEditorId(null);
       setFormName(""); setFormSpecialty(""); setFormCategories([]);
@@ -1172,6 +1185,7 @@ export default function TioJohnny() {
       setFormHair(""); setFormAge(""); setFormSizes("");
       setFormNationality("");
       setFormPhotos([]); setFormInstagram("");
+      setFormSection(adminSection); // new talent defaults to the section being managed
     }
     setView("editor");
   };
@@ -1209,7 +1223,7 @@ export default function TioJohnny() {
     const n = parseInt(raw, 10);
     if (!raw || isNaN(n)) return v;
     const formatted = n.toLocaleString("es-CL"); // e.g. 80.000
-    return `$${formatted} /hr`;
+    return `$${formatted}`;
   };
   const fmtPhone = (v) => {
     const stripped = v.trim();
@@ -1266,6 +1280,7 @@ export default function TioJohnny() {
       nationality: formNationality,
       photos: formPhotos,
       instagram: formInstagram,
+      section: formSection,
     };
 
     if (editorId) {
@@ -1290,29 +1305,54 @@ export default function TioJohnny() {
   // ─── Delete confirm state ──────────────────────────────────────────
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
-  // ─── Reorder talents (swap sort_order with neighbor) ──────────────
+  // ─── Reorder talents (optimistic, no reload) ──────────────────────
+  // Reorders the current admin section's active list, updates local state
+  // instantly, then persists the new sort_order values in the background.
   const [reordering, setReordering] = useState(false);
-  const handleReorder = async (id, direction) => {
-    if (reordering) return;
+
+  const persistOrder = async (orderedList) => {
+    // Assign sequential sort_order based on the new visual order
+    const updates = orderedList.map((t, i) => ({ id: t.id, sort_order: i + 1 }));
+    // Optimistic local update — list re-sorts immediately, no re-fetch
+    setTalents((prev) => prev.map((t) => {
+      const u = updates.find((x) => x.id === t.id);
+      return u ? { ...t, sort_order: u.sort_order } : t;
+    }));
     setReordering(true);
-    // Work with active talents only (they're already sorted)
-    const active = talents.filter((t) => !t.archived);
-    const idx = active.findIndex((t) => t.id === id);
-    const swapIdx = idx + direction; // -1 = up, +1 = down
-    if (swapIdx < 0 || swapIdx >= active.length) { setReordering(false); return; }
-
-    const a = active[idx];
-    const b = active[swapIdx];
-    // Swap their sort_order values
-    const orderA = a.sort_order ?? idx;
-    const orderB = b.sort_order ?? swapIdx;
-
-    await Promise.all([
-      supabase.from("talents").update({ sort_order: orderB }).eq("id", a.id),
-      supabase.from("talents").update({ sort_order: orderA }).eq("id", b.id),
-    ]);
-    await fetchTalents();
+    try {
+      await Promise.all(updates.map((u) =>
+        supabase.from("talents").update({ sort_order: u.sort_order }).eq("id", u.id)
+      ));
+    } catch (_) {}
     setReordering(false);
+  };
+
+  // Move a talent to a target 0-based index within its section's active list
+  const moveTalentToIndex = (id, toIndex) => {
+    const list = adminActiveTalents.slice();
+    const from = list.findIndex((t) => t.id === id);
+    if (from === -1) return;
+    const clamped = Math.max(0, Math.min(toIndex, list.length - 1));
+    if (from === clamped) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(clamped, 0, moved);
+    persistOrder(list);
+  };
+
+  // Neighbor swap (up/down arrows) — instant, no reload
+  const handleReorder = (id, direction) => {
+    const idx = adminActiveTalents.findIndex((t) => t.id === id);
+    if (idx === -1) return;
+    moveTalentToIndex(id, idx + direction);
+  };
+
+  // Drag & drop: drop dragged row onto a target row's position
+  const handleDropOn = (targetId) => {
+    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return; }
+    const targetIdx = adminActiveTalents.findIndex((t) => t.id === targetId);
+    if (targetIdx !== -1) moveTalentToIndex(dragId, targetIdx);
+    setDragId(null);
+    setDragOverId(null);
   };
 
   const handleDelete = async (id) => {
@@ -2104,6 +2144,21 @@ export default function TioJohnny() {
     trackEvent("category_view", null, cat);
   }, []);
 
+  // Switch between the main site and the LGBTQ+ section (public)
+  const switchSiteSection = (sec) => {
+    if (sec === siteSection) return;
+    setSiteSection(sec);
+    setActiveCategory("Todas");
+    prevCategoryRef.current = "Todas";
+    setSearchQuery("");
+    setSearchOpen(false);
+    setSelectedTalent(null);
+    setSwipeIndex(0);
+    setCardAnimKey((k) => k + 1);
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (_) {}
+    trackEvent("section_view", null, sec);
+  };
+
   // ─── Ambient color extraction from image ──────────────────────────
   const extractAmbientColor = useCallback((imgSrc) => {
     try {
@@ -2755,6 +2810,12 @@ export default function TioJohnny() {
   const activeTalents = talents.filter((t) => !t.archived && t.status !== "pendiente");
   const archivedTalents = talents.filter((t) => t.archived && t.status !== "pendiente");
   const pendingForAdmin = pendingTalents; // from separate fetch
+  // Scoped to the section currently being managed in the admin Profiles tab
+  const adminActiveTalents = activeTalents
+    .filter((t) => (t.section || "main") === adminSection)
+    .slice()
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const adminArchivedTalents = archivedTalents.filter((t) => (t.section || "main") === adminSection);
 
   // ─── Shared styles ────────────────────────────────────────────────────
   const inputStyle = { background: "#12122a", border: "1px solid #2a2a4a" };
@@ -2908,6 +2969,38 @@ export default function TioJohnny() {
               <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Especialidad</label>
               <input value={formSpecialty} onChange={(e) => setFormSpecialty(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="Fashion Model" />
             </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Sección del sitio</label>
+              <div className="flex gap-2">
+                {[
+                  { key: "main", label: "Principal" },
+                  { key: "lgbtq", label: "🏳️‍🌈 LGBTQ+" },
+                ].map((s) => {
+                  const on = formSection === s.key;
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => {
+                        if (s.key === formSection) return;
+                        setFormSection(s.key);
+                        // keep only categories that exist in the newly selected section
+                        const valid = sectionCategories(s.key).map((c) => c.name);
+                        setFormCategories((prev) => prev.filter((c) => valid.includes(c)));
+                      }}
+                      className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                      style={{
+                        background: on ? "#8B5CF6" : "#12122a",
+                        color: on ? "#fff" : "#9898b0",
+                        border: on ? "none" : "1px solid #2a2a4a",
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div ref={catDropdownRef} className="relative">
               <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Categorías</label>
               {/* Selected tags */}
@@ -2945,7 +3038,7 @@ export default function TioJohnny() {
                   </div>
                   {/* Options */}
                   <div className="overflow-y-auto" style={{ maxHeight: 192 }}>
-                    {categoryNames
+                    {editorCategoryNames
                       .filter((c) => !catSearch || c.toLowerCase().includes(catSearch.toLowerCase()))
                       .map((c) => {
                         const checked = formCategories.includes(c);
@@ -2964,8 +3057,8 @@ export default function TioJohnny() {
                           </button>
                         );
                       })}
-                    {categoryNames.filter((c) => !catSearch || c.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
-                      <p className="px-4 py-3 text-xs" style={{ color: "#4a4a6a" }}>No se encontraron categorías</p>
+                    {editorCategoryNames.filter((c) => !catSearch || c.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
+                      <p className="px-4 py-3 text-xs" style={{ color: "#4a4a6a" }}>No hay categorías en esta sección. Agrégalas en el panel.</p>
                     )}
                   </div>
                 </div>
@@ -3954,9 +4047,35 @@ export default function TioJohnny() {
         {/* ═══ PROFILES TAB ═══ */}
         {adminTab === "profiles" && (
         <>
+        {/* ── Section switcher (Principal / LGBTQ+) ── */}
+        <div className="px-4 pt-3 flex gap-2">
+          {[
+            { key: "main", label: "Principal" },
+            { key: "lgbtq", label: "🏳️‍🌈 LGBTQ+" },
+          ].map((s) => {
+            const on = adminSection === s.key;
+            const count = activeTalents.filter((t) => (t.section || "main") === s.key).length;
+            return (
+              <button
+                key={s.key}
+                onClick={() => setAdminSection(s.key)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                style={{
+                  background: on ? "#8B5CF6" : "#1e1e3a",
+                  color: on ? "#fff" : "#7878a0",
+                  border: on ? "none" : "1px solid #2a2a4a",
+                }}
+              >
+                {s.label}
+                <span className="px-1.5 py-0.5 rounded-full" style={{ fontSize: 9, background: on ? "rgba(255,255,255,0.25)" : "#12122a", color: on ? "#fff" : "#7878a0" }}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="px-4 py-3 flex gap-2">
           <button onClick={() => openEditor(null)} className="flex-1 py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
-            <Plus size={18} /> Nueva Modelo
+            <Plus size={18} /> Nueva Modelo {adminSection === "lgbtq" ? "(LGBTQ+)" : ""}
           </button>
           <button onClick={() => { setCsvImportOpen((o) => !o); setCsvPreview([]); setCsvResult(null); }} className="py-3 px-4 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 transition-transform active:scale-95" style={{ background: csvImportOpen ? "#2a2a4a" : "#1e1e3a", border: "1px solid #2a2a4a" }}>
             <FileSpreadsheet size={18} color="#8B5CF6" />
@@ -4062,10 +4181,10 @@ export default function TioJohnny() {
         <div className="px-4 pb-4">
           <div className="rounded-2xl p-4" style={{ background: "#1e1e3a" }}>
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
-              <Tag size={14} color="#8B5CF6" /> Categorías
+              <Tag size={14} color="#8B5CF6" /> Categorías {adminSection === "lgbtq" ? "· LGBTQ+" : "· Principal"}
             </h3>
             <div className="flex flex-wrap gap-2 mb-3">
-              {categories.map((cat) => (
+              {adminCategoryList.map((cat) => (
                 <div key={cat.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: "#12122a", border: "1px solid #2a2a4a", color: "#9898b0" }}>
                   {cat.name}
                   <button onClick={() => handleDeleteCategory(cat.id)} className="ml-1 hover:opacity-70">
@@ -4073,8 +4192,8 @@ export default function TioJohnny() {
                   </button>
                 </div>
               ))}
-              {categories.length === 0 && (
-                <p className="text-xs" style={{ color: "#4a4a6a" }}>No hay categorías. Agrega una.</p>
+              {adminCategoryList.length === 0 && (
+                <p className="text-xs" style={{ color: "#4a4a6a" }}>No hay categorías en esta sección. Agrega una.</p>
               )}
             </div>
             <div className="flex gap-2">
@@ -4095,27 +4214,74 @@ export default function TioJohnny() {
 
         {/* ── Active Talents ── */}
         <div className="px-4 pb-4 space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#8B5CF6" }}>Activas ({activeTalents.length})</h3>
-          {activeTalents.map((t, idx) => (
-            <div key={t.id} className="flex items-center gap-2 p-3 rounded-2xl" style={{ background: "#1e1e3a" }}>
-              {/* Position & reorder arrows */}
-              <div className="flex flex-col items-center flex-shrink-0" style={{ width: 24 }}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#8B5CF6" }}>Activas ({adminActiveTalents.length})</h3>
+            <span className="text-xs" style={{ color: "#4a4a6a" }}>Arrastra ⠿ o escribe el N° para reordenar</span>
+          </div>
+          {adminActiveTalents.map((t, idx) => (
+            <div
+              key={t.id}
+              onDragOver={(e) => { e.preventDefault(); if (dragId && dragOverId !== t.id) setDragOverId(t.id); }}
+              onDrop={() => handleDropOn(t.id)}
+              className="flex items-center gap-2 p-3 rounded-2xl transition-all"
+              style={{
+                background: "#1e1e3a",
+                opacity: dragId === t.id ? 0.4 : 1,
+                borderTop: dragOverId === t.id && dragId !== t.id ? "2px solid #8B5CF6" : "2px solid transparent",
+              }}
+            >
+              {/* Drag handle + position controls */}
+              <div className="flex flex-col items-center flex-shrink-0 gap-0.5" style={{ width: 30 }}>
+                <button
+                  draggable
+                  onDragStart={(e) => { setDragId(t.id); try { e.dataTransfer.setData("text/plain", String(t.id)); e.dataTransfer.effectAllowed = "move"; } catch (_) {} }}
+                  onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                  className="cursor-grab active:cursor-grabbing p-0.5"
+                  title="Arrastrar para reordenar"
+                >
+                  <GripVertical size={16} color="#4a4a6a" />
+                </button>
                 <button
                   onClick={() => handleReorder(t.id, -1)}
                   disabled={idx === 0 || reordering}
                   className="p-0.5 rounded transition-all active:scale-90"
                   style={{ opacity: idx === 0 ? 0.2 : 1 }}
+                  title="Subir"
                 >
                   <ChevronUp size={14} color="#8B5CF6" />
                 </button>
-                <span className="text-xs font-bold" style={{ color: "#4a4a6a" }}>{idx + 1}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={adminActiveTalents.length}
+                  defaultValue={idx + 1}
+                  key={`pos-${t.id}-${idx}`}
+                  onClick={(e) => e.target.select()}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                  onBlur={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (!isNaN(n) && n - 1 !== idx) moveTalentToIndex(t.id, n - 1);
+                  }}
+                  className="w-8 text-center rounded text-xs font-bold outline-none"
+                  style={{ background: "#12122a", border: "1px solid #2a2a4a", color: "#8B5CF6", MozAppearance: "textfield" }}
+                />
                 <button
                   onClick={() => handleReorder(t.id, 1)}
-                  disabled={idx === activeTalents.length - 1 || reordering}
+                  disabled={idx === adminActiveTalents.length - 1 || reordering}
                   className="p-0.5 rounded transition-all active:scale-90"
-                  style={{ opacity: idx === activeTalents.length - 1 ? 0.2 : 1 }}
+                  style={{ opacity: idx === adminActiveTalents.length - 1 ? 0.2 : 1 }}
+                  title="Bajar"
                 >
                   <ChevronDown size={14} color="#8B5CF6" />
+                </button>
+                <button
+                  onClick={() => moveTalentToIndex(t.id, 0)}
+                  disabled={idx === 0 || reordering}
+                  className="text-[9px] font-bold rounded px-1 py-0.5 transition-all active:scale-90"
+                  style={{ opacity: idx === 0 ? 0.2 : 1, color: "#8B5CF6", background: "#12122a" }}
+                  title="Mover al principio"
+                >
+                  TOP
                 </button>
               </div>
               <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
@@ -4166,19 +4332,19 @@ export default function TioJohnny() {
               </div>
             </div>
           ))}
-          {activeTalents.length === 0 && (
+          {adminActiveTalents.length === 0 && (
             <div className="text-center py-16">
               <User size={48} style={{ color: "#2a2a4a" }} className="mx-auto" />
-              <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No hay perfiles. Agrega tu primera modelo.</p>
+              <p className="mt-4 text-sm" style={{ color: "#6b6b90" }}>No hay perfiles en esta sección. Agrega tu primera modelo.</p>
             </div>
           )}
         </div>
 
         {/* ── Archived Talents ── */}
-        {archivedTalents.length > 0 && (
+        {adminArchivedTalents.length > 0 && (
           <div className="px-4 pb-6 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#f59e0b" }}>Archivadas ({archivedTalents.length})</h3>
-            {archivedTalents.map((t) => (
+            <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#f59e0b" }}>Archivadas ({adminArchivedTalents.length})</h3>
+            {adminArchivedTalents.map((t) => (
               <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ background: "#1e1e3a", opacity: 0.7 }}>
                 <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 56, height: 72 }}>
                   <img src={getThumb(t)} alt={t.name} className="w-full h-full object-cover" />
@@ -4576,6 +4742,17 @@ export default function TioJohnny() {
               <span style={{ fontWeight: 400, fontSize: 11, color: "#6b6b90", marginLeft: 3 }}>.cl</span>
             </h1>
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => switchSiteSection(siteSection === "main" ? "lgbtq" : "main")}
+                className="p-1.5 rounded-full transition-all active:scale-90"
+                title={siteSection === "main" ? "Ver sección LGBTQ+" : "Volver al sitio principal"}
+                style={{
+                  background: siteSection === "lgbtq" ? "linear-gradient(90deg, #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787)" : "transparent",
+                  border: siteSection === "lgbtq" ? "none" : "1px solid #2a2a4a",
+                }}
+              >
+                <span style={{ fontSize: 18, lineHeight: 1 }}>🏳️‍🌈</span>
+              </button>
               <button onClick={() => setSearchOpen(true)} className="p-2">
                 <Search size={20} color="#8B5CF6" />
               </button>
@@ -4587,6 +4764,16 @@ export default function TioJohnny() {
         )}
         </div>
       </header>
+
+      {/* ── LGBTQ+ section banner ── */}
+      {siteSection === "lgbtq" && (
+        <div className="flex items-center justify-between gap-2 px-4 py-2" style={{ background: "linear-gradient(90deg, rgba(228,3,3,0.12), rgba(255,140,0,0.12), rgba(255,237,0,0.12), rgba(0,128,38,0.12), rgba(0,77,255,0.12), rgba(117,7,135,0.12))", borderBottom: "1px solid rgba(139,92,246,0.25)" }}>
+          <span className="text-xs font-bold text-white flex items-center gap-1.5">🏳️‍🌈 Sección LGBTQ+</span>
+          <button onClick={() => switchSiteSection("main")} className="text-xs font-semibold px-3 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.12)", color: "#fff" }}>
+            ← Sitio principal
+          </button>
+        </div>
+      )}
 
       {/* ── Animated entrance counters ── */}
       {countersShown && (
