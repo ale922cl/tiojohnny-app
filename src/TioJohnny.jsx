@@ -529,6 +529,10 @@ export default function TioJohnny() {
   const [newCategoryEmoji, setNewCategoryEmoji] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState("#8B5CF6");
   const BADGE_COLORS = ["#8B5CF6", "#ec4899", "#f43f5e", "#fb923c", "#f59e0b", "#22c55e", "#06b6d4", "#3b82f6"];
+  const [ads, setAds] = useState([]);
+  const [newAdUrl, setNewAdUrl] = useState("");
+  const [adUploading, setAdUploading] = useState(false);
+  const AD_EVERY = 9; // insert an ad card after every 9 profiles
 
   // ─── Login state ───────────────────────────────────────────────────────
   const [loginEmail, setLoginEmail] = useState("");
@@ -839,6 +843,7 @@ export default function TioJohnny() {
   useEffect(() => {
     fetchTalents();
     fetchCategories();
+    fetchAds();
     trackEvent("page_view", null, null, JSON.stringify({ device: getDeviceType() }));
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -899,6 +904,46 @@ export default function TioJohnny() {
       .select("*")
       .order("sort_order", { ascending: true });
     if (!error && data) setCategories(data);
+  };
+
+  const fetchAds = async () => {
+    const { data } = await supabase
+      .from("ads")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    if (data) setAds(data);
+  };
+  const activeAds = ads.filter((a) => a.active);
+
+  // Upload an ad image (no watermark) and create the ad row
+  const handleAddAd = async (file) => {
+    if (!file || !newAdUrl.trim()) return;
+    setAdUploading(true);
+    try {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const fileName = `ads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data, error } = await supabase.storage.from("talent-photos").upload(fileName, file, { cacheControl: "31536000", upsert: false });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("talent-photos").getPublicUrl(data.path);
+      let url = newAdUrl.trim();
+      if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+      const nextOrder = ads.length > 0 ? Math.max(...ads.map((a) => a.sort_order || 0)) + 1 : 1;
+      const { error: insErr } = await supabase.from("ads").insert([{ image_url: urlData.publicUrl, target_url: url, active: true, sort_order: nextOrder }]);
+      if (insErr) { console.error("ad insert error:", insErr); alert("Error al guardar el anuncio. Revisa los permisos de la tabla ads."); }
+      setNewAdUrl("");
+      await fetchAds();
+    } catch (e) { console.error(e); alert("Error al subir la imagen del anuncio."); }
+    setAdUploading(false);
+  };
+  const toggleAdActive = async (ad) => {
+    await supabase.from("ads").update({ active: !ad.active }).eq("id", ad.id);
+    await fetchAds();
+  };
+  const handleDeleteAd = async (ad) => {
+    await supabase.from("ads").delete().eq("id", ad.id);
+    try { await deletePhoto(ad.image_url); } catch (_) {}
+    await fetchAds();
   };
 
   // Derived arrays for UI (categories are scoped per site section)
@@ -4357,6 +4402,53 @@ export default function TioJohnny() {
           </div>
         </div>
 
+        {/* ── Ads Manager (global, in-grid) ── */}
+        <div className="px-4 pb-4">
+          <div className="rounded-2xl p-4" style={{ background: "#1e1e3a" }}>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
+              <ImageIcon size={14} color="#8B5CF6" /> Anuncios
+            </h3>
+            <p className="text-xs mb-3" style={{ color: "#7878a0" }}>Aparecen como tarjeta cada {AD_EVERY} perfiles en la grilla. Si hay varios, rotan.</p>
+            <div className="space-y-2 mb-3">
+              {ads.map((ad) => (
+                <div key={ad.id} className="flex items-center gap-2 p-2 rounded-xl" style={{ background: "#12122a", opacity: ad.active ? 1 : 0.5 }}>
+                  <img src={ad.image_url} alt="" className="rounded-lg object-cover flex-shrink-0" style={{ width: 40, height: 52 }} />
+                  <div className="flex-1 min-w-0">
+                    <a href={ad.target_url} target="_blank" rel="noopener noreferrer" className="text-xs truncate block" style={{ color: "#8B5CF6" }}>{ad.target_url}</a>
+                    <span className="text-xs" style={{ color: ad.active ? "#22c55e" : "#7878a0" }}>{ad.active ? "Activo" : "Pausado"}</span>
+                  </div>
+                  <button onClick={() => toggleAdActive(ad)} className="px-2 py-1 rounded-lg text-xs font-semibold" style={{ background: "#2a2a4a", color: ad.active ? "#f59e0b" : "#22c55e" }}>
+                    {ad.active ? "Pausar" : "Activar"}
+                  </button>
+                  <button onClick={() => handleDeleteAd(ad)} className="p-2 rounded-lg" style={{ background: "#2a2a4a" }} title="Eliminar">
+                    <Trash2 size={14} color="#f43f5e" />
+                  </button>
+                </div>
+              ))}
+              {ads.length === 0 && <p className="text-xs" style={{ color: "#4a4a6a" }}>No hay anuncios. Agrega uno abajo.</p>}
+            </div>
+            <input
+              value={newAdUrl}
+              onChange={(e) => setNewAdUrl(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none mb-2"
+              style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
+              placeholder="URL de destino (ej: https://instagram.com/...)"
+              inputMode="url"
+            />
+            <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-bold text-white text-xs transition-transform active:scale-95 cursor-pointer" style={{ background: newAdUrl.trim() && !adUploading ? "#8B5CF6" : "#2a2a4a", opacity: newAdUrl.trim() ? 1 : 0.6 }}>
+              {adUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {adUploading ? "Subiendo..." : "Subir imagen y publicar"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={!newAdUrl.trim() || adUploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAddAd(f); e.target.value = ""; }}
+              />
+            </label>
+          </div>
+        </div>
+
         {/* ── Active Talents ── */}
         <div className="px-4 pb-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -5171,7 +5263,7 @@ export default function TioJohnny() {
       {viewMode === "grid" && (
         <>
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 px-3 pb-8 ${gridMorphing ? "grid-morph-out" : ""}`}>
-            {filtered.map((t, idx) => {
+            {filtered.flatMap((t, idx) => {
               const isFav = favorites.includes(t.id);
               const isHeartbeat = heartbeatIds.includes(t.id);
               const lp = makeLongPress(t);
@@ -5181,7 +5273,7 @@ export default function TioJohnny() {
               const trendLimit = filtered.length >= 10 ? 3 : 2;
               const isTrending = trendViews >= 1 && trendRank < trendLimit;
               const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
-              return (
+              const card = (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
                   onPointerDown={castMode ? undefined : lp.onPointerDown}
@@ -5234,6 +5326,27 @@ export default function TioJohnny() {
                   </div>
                 </div>
               );
+              // Inject a rotating ad card after every AD_EVERY profiles
+              if (activeAds.length > 0 && (idx + 1) % AD_EVERY === 0) {
+                const ad = activeAds[Math.floor(idx / AD_EVERY) % activeAds.length];
+                return [card, (
+                  <a
+                    key={`ad-${idx}-${ad.id}`}
+                    href={ad.target_url}
+                    target="_blank"
+                    rel="noopener noreferrer sponsored"
+                    onClick={() => trackEvent("ad_click", null, null, ad.id)}
+                    className="grid-morph-in rounded-2xl cursor-pointer block relative"
+                    style={{ background: "#1e1e3a" }}
+                  >
+                    <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
+                      <img src={ad.image_url} alt="Publicidad" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                      <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-white" style={{ fontSize: 8, background: "rgba(0,0,0,0.55)", letterSpacing: "0.04em" }}>PUBLICIDAD</span>
+                    </div>
+                  </a>
+                )];
+              }
+              return card;
             })}
           </div>
 
