@@ -526,6 +526,10 @@ export default function TioJohnny() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryEmoji, setNewCategoryEmoji] = useState("");
+  const [newCategoryColor, setNewCategoryColor] = useState("#8B5CF6");
+  const [newCategoryOnCard, setNewCategoryOnCard] = useState(false);
+  const BADGE_COLORS = ["#8B5CF6", "#ec4899", "#f43f5e", "#fb923c", "#f59e0b", "#22c55e", "#06b6d4", "#3b82f6"];
 
   // ─── Login state ───────────────────────────────────────────────────────
   const [loginEmail, setLoginEmail] = useState("");
@@ -909,10 +913,25 @@ export default function TioJohnny() {
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     const nextOrder = categories.length > 0 ? Math.max(...categories.map((c) => c.sort_order)) + 1 : 1;
-    await supabase.from("categories").insert([{ name: newCategoryName.trim(), sort_order: nextOrder, section: adminSection }]);
-    setNewCategoryName("");
+    await supabase.from("categories").insert([{
+      name: newCategoryName.trim(),
+      sort_order: nextOrder,
+      section: adminSection,
+      emoji: newCategoryEmoji.trim() || null,
+      color: newCategoryColor || null,
+      on_card: newCategoryOnCard,
+    }]);
+    setNewCategoryName(""); setNewCategoryEmoji(""); setNewCategoryColor("#8B5CF6"); setNewCategoryOnCard(false);
     await fetchCategories();
   };
+
+  // Look up a category object by name within a section (for badge emoji/color)
+  const catByName = (name, sec) => categories.find((c) => c.name === name && (c.section || "main") === (sec || "main"));
+  // Badges to render on a talent's card (assigned categories flagged on_card)
+  const cardBadgesFor = (t) => getTalentCategories(t)
+    .map((name) => catByName(name, t.section))
+    .filter((c) => c && c.on_card)
+    .slice(0, 2);
 
   const handleDeleteCategory = async (id) => {
     await supabase.from("categories").delete().eq("id", id);
@@ -3100,7 +3119,8 @@ export default function TioJohnny() {
                             <div className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center" style={{ border: checked ? "none" : "1.5px solid #4a4a6a", background: checked ? "#8B5CF6" : "transparent" }}>
                               {checked && <Check size={10} color="#fff" strokeWidth={3} />}
                             </div>
-                            {c}
+                            {(() => { const cObj = catByName(c, formSection); return cObj?.emoji ? `${cObj.emoji} ` : ""; })()}{c}
+                            {catByName(c, formSection)?.on_card && <span className="ml-auto" style={{ fontSize: 9, color: catByName(c, formSection)?.color || "#8B5CF6" }}>banner</span>}
                           </button>
                         );
                       })}
@@ -4255,8 +4275,10 @@ export default function TioJohnny() {
             </h3>
             <div className="flex flex-wrap gap-2 mb-3">
               {adminCategoryList.map((cat) => (
-                <div key={cat.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: "#12122a", border: "1px solid #2a2a4a", color: "#9898b0" }}>
+                <div key={cat.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: cat.on_card ? `${cat.color || "#8B5CF6"}22` : "#12122a", border: `1px solid ${cat.on_card ? (cat.color || "#8B5CF6") : "#2a2a4a"}`, color: cat.on_card ? (cat.color || "#8B5CF6") : "#9898b0" }}>
+                  {cat.emoji && <span>{cat.emoji}</span>}
                   {cat.name}
+                  {cat.on_card && <span title="Se muestra como banner en la tarjeta" style={{ fontSize: 8, opacity: 0.7 }}>● banner</span>}
                   <button onClick={() => handleDeleteCategory(cat.id)} className="ml-1 hover:opacity-70">
                     <X size={12} color="#f43f5e" />
                   </button>
@@ -4266,17 +4288,50 @@ export default function TioJohnny() {
                 <p className="text-xs" style={{ color: "#4a4a6a" }}>No hay categorías en esta sección. Agrega una.</p>
               )}
             </div>
-            <div className="flex gap-2">
-              <input
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory(); }}
-                className="flex-1 px-3 py-2 rounded-lg text-sm text-white outline-none"
-                style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
-                placeholder="Nueva categoría..."
-              />
-              <button onClick={handleAddCategory} className="px-4 py-2 rounded-lg font-bold text-white text-xs transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
-                <Plus size={14} />
+            {/* Add category / banner */}
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={newCategoryEmoji}
+                  onChange={(e) => setNewCategoryEmoji(e.target.value.slice(0, 2))}
+                  className="w-12 px-2 py-2 rounded-lg text-base text-center text-white outline-none"
+                  style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
+                  placeholder="💋"
+                  title="Emoji (opcional)"
+                />
+                <input
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory(); }}
+                  className="flex-1 px-3 py-2 rounded-lg text-sm text-white outline-none"
+                  style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
+                  placeholder="Nueva categoría o banner..."
+                />
+                <button onClick={handleAddCategory} className="px-4 py-2 rounded-lg font-bold text-white text-xs transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
+                  <Plus size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs" style={{ color: "#7878a0" }}>Color:</span>
+                {BADGE_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setNewCategoryColor(c)}
+                    className="w-5 h-5 rounded-full transition-transform active:scale-90"
+                    style={{ background: c, outline: newCategoryColor === c ? "2px solid #fff" : "none", outlineOffset: 1 }}
+                    title={c}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => setNewCategoryOnCard((v) => !v)}
+                className="flex items-center gap-2 text-xs font-semibold"
+                style={{ color: newCategoryOnCard ? (newCategoryColor || "#8B5CF6") : "#7878a0" }}
+              >
+                <div className="w-4 h-4 rounded flex items-center justify-center" style={{ border: newCategoryOnCard ? "none" : "1.5px solid #4a4a6a", background: newCategoryOnCard ? (newCategoryColor || "#8B5CF6") : "transparent" }}>
+                  {newCategoryOnCard && <Check size={10} color="#fff" strokeWidth={3} />}
+                </div>
+                Mostrar como banner en la tarjeta (como 🔥)
               </button>
             </div>
           </div>
@@ -4922,7 +4977,7 @@ export default function TioJohnny() {
               }}
             >
               {isFavPill && <Heart size={10} fill={active ? "#fff" : "none"} />}
-              {cat}
+              {(() => { const cObj = catByName(cat, siteSection); return cObj?.emoji ? `${cObj.emoji} ` : ""; })()}{cat}
               {isFavPill && favorites.length > 0 && (
                 <span className={`ml-1 px-1.5 py-0.5 rounded-full text-white ${badgeBounce ? "badge-bounce" : ""}`} style={{ fontSize: 9, background: active ? "rgba(255,255,255,0.25)" : "#f43f5e", minWidth: 18, textAlign: "center" }}>
                   {favorites.length}
@@ -5137,6 +5192,11 @@ export default function TioJohnny() {
                     </button>
                     <div className="absolute bottom-0 left-0 right-0 p-3">
                       <div className="flex flex-wrap gap-1 mb-1">
+                      {cardBadgesFor(t).map((c) => (
+                        <div key={c.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: `${c.color || "#8B5CF6"}33`, border: `1px solid ${c.color || "#8B5CF6"}` }}>
+                          <span style={{ fontSize: 9, color: c.color || "#8B5CF6", fontWeight: 700 }}>{c.emoji ? `${c.emoji} ` : ""}{c.name}</span>
+                        </div>
+                      ))}
                       {isTrending ? (
                         <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.2)", border: "1px solid rgba(251,146,60,0.4)" }}>
                           <span style={{ fontSize: 9, color: "#fb923c" }}>🔥 {trendViews} vistas</span>
@@ -5178,7 +5238,7 @@ export default function TioJohnny() {
                 <span style={{ fontSize: 30, lineHeight: 1 }}>🏳️‍🌈</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-white">¿Buscas algo diferente?</p>
-                  <p className="text-xs mt-0.5" style={{ color: "#cfcfe6" }}>Explora nuestra sección LGBTQ+ — talento gay y trans para tu evento.</p>
+                  <p className="text-xs mt-0.5" style={{ color: "#cfcfe6" }}>Explora nuestra sección LGBTQ+ — modelos gay y trans.</p>
                 </div>
                 <ChevronRight size={20} color="#fff" />
               </button>
