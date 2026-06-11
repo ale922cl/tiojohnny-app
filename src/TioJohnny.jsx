@@ -528,7 +528,6 @@ export default function TioJohnny() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryEmoji, setNewCategoryEmoji] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState("#8B5CF6");
-  const [newCategoryOnCard, setNewCategoryOnCard] = useState(false);
   const BADGE_COLORS = ["#8B5CF6", "#ec4899", "#f43f5e", "#fb923c", "#f59e0b", "#22c55e", "#06b6d4", "#3b82f6"];
 
   // ─── Login state ───────────────────────────────────────────────────────
@@ -588,6 +587,7 @@ export default function TioJohnny() {
   const [formName, setFormName] = useState("");
   const [formSpecialty, setFormSpecialty] = useState("");
   const [formCategories, setFormCategories] = useState([]);
+  const [formBanners, setFormBanners] = useState([]); // subset of formCategories shown as banners on this model's card
   const [formSection, setFormSection] = useState("main"); // editor: which site section this talent belongs to
   const [formRate, setFormRate] = useState("");
   const [formPhone, setFormPhone] = useState("");
@@ -919,19 +919,19 @@ export default function TioJohnny() {
       section: adminSection,
       emoji: newCategoryEmoji.trim() || null,
       color: newCategoryColor || null,
-      on_card: newCategoryOnCard,
     }]);
-    setNewCategoryName(""); setNewCategoryEmoji(""); setNewCategoryColor("#8B5CF6"); setNewCategoryOnCard(false);
+    setNewCategoryName(""); setNewCategoryEmoji(""); setNewCategoryColor("#8B5CF6");
     await fetchCategories();
   };
 
   // Look up a category object by name within a section (for badge emoji/color)
   const catByName = (name, sec) => categories.find((c) => c.name === name && (c.section || "main") === (sec || "main"));
-  // Badges to render on a talent's card (assigned categories flagged on_card)
-  const cardBadgesFor = (t) => getTalentCategories(t)
-    .map((name) => catByName(name, t.section))
-    .filter((c) => c && c.on_card)
-    .slice(0, 2);
+  // Banners to render on a talent's card — chosen PER MODEL (banner_categories),
+  // styled with the category's emoji/color. Independent of the category filter.
+  const cardBadgesFor = (t) => {
+    const names = Array.isArray(t.banner_categories) ? t.banner_categories : [];
+    return names.map((name) => catByName(name, t.section)).filter(Boolean).slice(0, 2);
+  };
 
   const handleDeleteCategory = async (id) => {
     await supabase.from("categories").delete().eq("id", id);
@@ -1198,6 +1198,7 @@ export default function TioJohnny() {
       setFormName(talent.name || "");
       setFormSpecialty(talent.specialty || "");
       setFormCategories(Array.isArray(talent.category) ? talent.category : (talent.category ? [talent.category] : []));
+      setFormBanners(Array.isArray(talent.banner_categories) ? talent.banner_categories : []);
       setFormRate(talent.rate || "");
       setFormPhone(talent.phone || "");
       setFormLocation(talent.location || "");
@@ -1215,7 +1216,7 @@ export default function TioJohnny() {
       setFormSection(talent.section || "main");
     } else {
       setEditorId(null);
-      setFormName(""); setFormSpecialty(""); setFormCategories([]);
+      setFormName(""); setFormSpecialty(""); setFormCategories([]); setFormBanners([]);
       setFormRate(""); setFormPhone(""); setFormLocation("");
       setFormAbout(""); setFormExperience("");
       setFormHeight(""); setFormWeight(""); setFormEyes("");
@@ -1303,6 +1304,7 @@ export default function TioJohnny() {
       name: formName,
       specialty: formSpecialty,
       category: formCategories,
+      banner_categories: formBanners.filter((b) => formCategories.includes(b)),
       rate: formRate,
       phone: formPhone,
       location: formLocation,
@@ -3053,6 +3055,7 @@ export default function TioJohnny() {
                         // keep only categories that exist in the newly selected section
                         const valid = sectionCategories(s.key).map((c) => c.name);
                         setFormCategories((prev) => prev.filter((c) => valid.includes(c)));
+                        setFormBanners((prev) => prev.filter((c) => valid.includes(c)));
                       }}
                       className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
                       style={{
@@ -3081,7 +3084,7 @@ export default function TioJohnny() {
                   <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: "#8B5CF6" }}>
                     {c}
                     <span
-                      onClick={(e) => { e.stopPropagation(); setFormCategories((prev) => prev.filter((x) => x !== c)); }}
+                      onClick={(e) => { e.stopPropagation(); setFormCategories((prev) => prev.filter((x) => x !== c)); setFormBanners((prev) => prev.filter((x) => x !== c)); }}
                       className="cursor-pointer ml-0.5"
                       style={{ opacity: 0.7 }}
                     >&times;</span>
@@ -3112,7 +3115,7 @@ export default function TioJohnny() {
                           <button
                             key={c}
                             type="button"
-                            onClick={() => setFormCategories((prev) => checked ? prev.filter((x) => x !== c) : [...prev, c])}
+                            onClick={() => { setFormCategories((prev) => checked ? prev.filter((x) => x !== c) : [...prev, c]); if (checked) setFormBanners((prev) => prev.filter((x) => x !== c)); }}
                             className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors"
                             style={{ color: checked ? "#fff" : "#9898b0", background: checked ? "rgba(139,92,246,0.15)" : "transparent" }}
                           >
@@ -3120,7 +3123,6 @@ export default function TioJohnny() {
                               {checked && <Check size={10} color="#fff" strokeWidth={3} />}
                             </div>
                             {(() => { const cObj = catByName(c, formSection); return cObj?.emoji ? `${cObj.emoji} ` : ""; })()}{c}
-                            {catByName(c, formSection)?.on_card && <span className="ml-auto" style={{ fontSize: 9, color: catByName(c, formSection)?.color || "#8B5CF6" }}>banner</span>}
                           </button>
                         );
                       })}
@@ -3131,6 +3133,34 @@ export default function TioJohnny() {
                 </div>
               )}
             </div>
+            {/* Per-model banner selection — choose which assigned categories show as a banner on THIS model's card */}
+            {formCategories.length > 0 && (
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Banners en la tarjeta <span style={{ color: "#4a4a6a" }}>(opcional)</span></label>
+                <div className="flex flex-wrap gap-2">
+                  {formCategories.map((c) => {
+                    const cObj = catByName(c, formSection);
+                    const on = formBanners.includes(c);
+                    const color = cObj?.color || "#8B5CF6";
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setFormBanners((prev) => on ? prev.filter((x) => x !== c) : [...prev, c])}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95"
+                        style={{ background: on ? `${color}26` : "#12122a", border: `1px solid ${on ? color : "#2a2a4a"}`, color: on ? color : "#7878a0" }}
+                      >
+                        <div className="w-3.5 h-3.5 rounded flex items-center justify-center" style={{ border: on ? "none" : "1.5px solid #4a4a6a", background: on ? color : "transparent" }}>
+                          {on && <Check size={9} color="#fff" strokeWidth={3} />}
+                        </div>
+                        {cObj?.emoji ? `${cObj.emoji} ` : ""}{c}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs mt-1" style={{ color: "#4a4a6a" }}>Solo las marcadas aparecen como banner en la tarjeta (máx 2).</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Tarifa</label>
@@ -4275,10 +4305,9 @@ export default function TioJohnny() {
             </h3>
             <div className="flex flex-wrap gap-2 mb-3">
               {adminCategoryList.map((cat) => (
-                <div key={cat.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: cat.on_card ? `${cat.color || "#8B5CF6"}22` : "#12122a", border: `1px solid ${cat.on_card ? (cat.color || "#8B5CF6") : "#2a2a4a"}`, color: cat.on_card ? (cat.color || "#8B5CF6") : "#9898b0" }}>
+                <div key={cat.id} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: `${cat.color || "#8B5CF6"}1a`, border: `1px solid ${cat.color || "#2a2a4a"}`, color: cat.color || "#9898b0" }}>
                   {cat.emoji && <span>{cat.emoji}</span>}
                   {cat.name}
-                  {cat.on_card && <span title="Se muestra como banner en la tarjeta" style={{ fontSize: 8, opacity: 0.7 }}>● banner</span>}
                   <button onClick={() => handleDeleteCategory(cat.id)} className="ml-1 hover:opacity-70">
                     <X size={12} color="#f43f5e" />
                   </button>
@@ -4288,7 +4317,7 @@ export default function TioJohnny() {
                 <p className="text-xs" style={{ color: "#4a4a6a" }}>No hay categorías en esta sección. Agrega una.</p>
               )}
             </div>
-            {/* Add category / banner */}
+            {/* Add category */}
             <div className="space-y-2">
               <div className="flex gap-2">
                 <input
@@ -4305,14 +4334,14 @@ export default function TioJohnny() {
                   onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory(); }}
                   className="flex-1 px-3 py-2 rounded-lg text-sm text-white outline-none"
                   style={{ background: "#12122a", border: "1px solid #2a2a4a" }}
-                  placeholder="Nueva categoría o banner..."
+                  placeholder="Nueva categoría..."
                 />
                 <button onClick={handleAddCategory} className="px-4 py-2 rounded-lg font-bold text-white text-xs transition-transform active:scale-95" style={{ background: "#8B5CF6" }}>
                   <Plus size={14} />
                 </button>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs" style={{ color: "#7878a0" }}>Color:</span>
+                <span className="text-xs" style={{ color: "#7878a0" }}>Color del banner:</span>
                 {BADGE_COLORS.map((c) => (
                   <button
                     key={c}
@@ -4323,16 +4352,7 @@ export default function TioJohnny() {
                   />
                 ))}
               </div>
-              <button
-                onClick={() => setNewCategoryOnCard((v) => !v)}
-                className="flex items-center gap-2 text-xs font-semibold"
-                style={{ color: newCategoryOnCard ? (newCategoryColor || "#8B5CF6") : "#7878a0" }}
-              >
-                <div className="w-4 h-4 rounded flex items-center justify-center" style={{ border: newCategoryOnCard ? "none" : "1.5px solid #4a4a6a", background: newCategoryOnCard ? (newCategoryColor || "#8B5CF6") : "transparent" }}>
-                  {newCategoryOnCard && <Check size={10} color="#fff" strokeWidth={3} />}
-                </div>
-                Mostrar como banner en la tarjeta (como 🔥)
-              </button>
+              <p className="text-xs" style={{ color: "#4a4a6a" }}>El emoji y color definen cómo se ve el banner. Eliges <b>en qué modelos</b> mostrarlo desde el editor de cada perfil.</p>
             </div>
           </div>
         </div>
