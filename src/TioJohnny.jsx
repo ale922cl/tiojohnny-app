@@ -906,6 +906,8 @@ export default function TioJohnny() {
     if (!error && data) setCategories(data);
   };
 
+  const adImprSent = useRef(new Set());
+
   const fetchAds = async () => {
     const { data } = await supabase
       .from("ads")
@@ -1205,6 +1207,19 @@ export default function TioJohnny() {
     }
     return true;
   });
+
+  // Fire one ad impression per ad per session for ads actually shown in the grid
+  useEffect(() => {
+    if (view !== "public" || viewMode !== "grid" || activeAds.length === 0) return;
+    const slots = Math.floor(filtered.length / AD_EVERY);
+    for (let i = 0; i < slots; i++) {
+      const ad = activeAds[i % activeAds.length];
+      if (ad && !adImprSent.current.has(ad.id)) {
+        adImprSent.current.add(ad.id);
+        trackEvent("ad_impression", null, null, ad.id);
+      }
+    }
+  }, [view, viewMode, filtered.length, ads]);
 
   // ─── Auth handlers ─────────────────────────────────────────────────────
   const handleLogin = async () => {
@@ -1779,6 +1794,13 @@ export default function TioJohnny() {
     });
     const peakHour = hourCounts.indexOf(Math.max(...hourCounts));
 
+    // Ad performance — impressions/clicks per ad id (stored in event.extra)
+    const adImpr = {}, adClk = {};
+    events.forEach((e) => {
+      if (e.event_type === "ad_impression") adImpr[e.extra] = (adImpr[e.extra] || 0) + 1;
+      else if (e.event_type === "ad_click") adClk[e.extra] = (adClk[e.extra] || 0) + 1;
+    });
+
     setAnalyticsData({
       visitors: { today: vs.today_visitors || 0, week: vs.week_visitors || 0, month: vs.month_visitors || 0 },
       sessions: { today: vs.today_sessions || 0, week: vs.week_sessions || 0, month: vs.month_sessions || 0 },
@@ -1795,6 +1817,7 @@ export default function TioJohnny() {
       contacts: { whatsapp: contactWa, call: contactCall, instagram: contactIg, total: contactWa + contactCall + contactIg },
       peakHour,
       hourCounts,
+      adStats: { impressions: adImpr, clicks: adClk },
       fetchedRange: r,
       fetchedFrom: cf,
       fetchedTo: ct,
@@ -3692,6 +3715,58 @@ export default function TioJohnny() {
                             <div style={{ fontSize: 10, color: "#7878a0" }}>Instagram</div>
                           </div>
                         </div>
+                      </div>
+                    )}
+
+                    {/* Ad performance */}
+                    {ads.length > 0 && analyticsData.adStats && (
+                      <div className="rounded-xl p-4" style={{ background: "#1e1e3a" }}>
+                        <h3 className="text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-1.5" style={{ color: "#8B5CF6" }}>
+                          <ImageIcon size={12} /> Anuncios (Publicidad)
+                        </h3>
+                        {(() => {
+                          const impr = analyticsData.adStats.impressions || {};
+                          const clk = analyticsData.adStats.clicks || {};
+                          const totalImpr = ads.reduce((s, a) => s + (impr[a.id] || 0), 0);
+                          const totalClk = ads.reduce((s, a) => s + (clk[a.id] || 0), 0);
+                          const ctr = (c, i) => i > 0 ? `${((c / i) * 100).toFixed(1)}%` : "—";
+                          return (
+                            <>
+                              <div className="grid grid-cols-3 gap-2 mb-3">
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold text-white">{totalImpr.toLocaleString("es-CL")}</div>
+                                  <div style={{ fontSize: 10, color: "#7878a0" }}>Impresiones</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold" style={{ color: "#8B5CF6" }}>{totalClk.toLocaleString("es-CL")}</div>
+                                  <div style={{ fontSize: 10, color: "#7878a0" }}>Clics</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold" style={{ color: "#22c55e" }}>{ctr(totalClk, totalImpr)}</div>
+                                  <div style={{ fontSize: 10, color: "#7878a0" }}>CTR</div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                {ads.map((a) => {
+                                  const i = impr[a.id] || 0, c = clk[a.id] || 0;
+                                  return (
+                                    <div key={a.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#12122a", opacity: a.active ? 1 : 0.55 }}>
+                                      <img src={a.image_url} alt="" className="rounded object-cover flex-shrink-0" style={{ width: 28, height: 36 }} />
+                                      <a href={a.target_url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-xs truncate" style={{ color: "#9898b0" }}>{a.target_url}</a>
+                                      <div className="text-right flex-shrink-0" style={{ fontSize: 11 }}>
+                                        <span className="text-white font-semibold">{i}</span>
+                                        <span style={{ color: "#7878a0" }}> impr · </span>
+                                        <span className="font-semibold" style={{ color: "#8B5CF6" }}>{c}</span>
+                                        <span style={{ color: "#7878a0" }}> clic · </span>
+                                        <span className="font-semibold" style={{ color: "#22c55e" }}>{ctr(c, i)}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
 
