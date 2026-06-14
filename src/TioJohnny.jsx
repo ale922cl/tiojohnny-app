@@ -131,8 +131,23 @@ async function applyWatermark(file) {
   });
 }
 
+// Validate an uploaded file is a reasonable image. Throws on failure.
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+function validateImageFile(file) {
+  if (!file) throw new Error("No se seleccionó ningún archivo.");
+  const type = (file.type || "").toLowerCase();
+  if (!type.startsWith("image/") || (ALLOWED_IMAGE_TYPES.length && !ALLOWED_IMAGE_TYPES.includes(type))) {
+    throw new Error("Formato no permitido. Sube una imagen JPG, PNG o WebP.");
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error(`La imagen es muy grande (máx ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB).`);
+  }
+}
+
 // Upload a photo to Supabase Storage and return its public URL
 async function uploadPhoto(file, talentId) {
+  validateImageFile(file);
   const watermarked = await applyWatermark(file);
   const ext = "jpg"; // canvas always outputs jpeg
   const fileName = `${talentId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -923,6 +938,7 @@ export default function TioJohnny() {
     if (!file || !newAdUrl.trim()) return;
     setAdUploading(true);
     try {
+      validateImageFile(file);
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
       const fileName = `ads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const { data, error } = await supabase.storage.from("talent-photos").upload(fileName, file, { cacheControl: "31536000", upsert: false });
@@ -1296,15 +1312,18 @@ export default function TioJohnny() {
     // Use a temp ID for new profiles
     const tempId = editorId || "new_" + Date.now();
 
+    let lastError = "";
     for (const file of files) {
       try {
         const url = await uploadPhoto(file, tempId);
         setFormPhotos((prev) => [...prev, url]);
       } catch (err) {
         console.error("Upload failed:", err);
+        lastError = err?.message || "No se pudo subir la imagen.";
       }
     }
     setUploading(false);
+    if (lastError) alert(lastError);
     if (e.target) e.target.value = "";
   };
 
@@ -1495,13 +1514,15 @@ export default function TioJohnny() {
     if (!files.length) return;
     setRegUploading(true);
     const tempId = "reg_" + Date.now();
+    let lastError = "";
     for (const file of files) {
       try {
         const url = await uploadPhoto(file, tempId);
         setRegPhotos((prev) => [...prev, url]);
-      } catch (err) { console.error(err); }
+      } catch (err) { console.error(err); lastError = err?.message || "No se pudo subir la imagen."; }
     }
     setRegUploading(false);
+    if (lastError) alert(lastError);
     if (e.target) e.target.value = "";
   };
 
