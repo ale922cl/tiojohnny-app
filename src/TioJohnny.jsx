@@ -175,6 +175,44 @@ async function deletePhoto(url) {
   await supabase.storage.from("talent-photos").remove([path]);
 }
 
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 MB
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+function validateVideoFile(file) {
+  if (!file) throw new Error("No se seleccionó ningún archivo.");
+  const type = (file.type || "").toLowerCase();
+  if (!type.startsWith("video/") || !ALLOWED_VIDEO_TYPES.includes(type)) {
+    throw new Error("Formato no permitido. Sube un video MP4, MOV o WebM.");
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    throw new Error(`El video es muy grande (máx ${Math.round(MAX_VIDEO_BYTES / 1024 / 1024)} MB).`);
+  }
+}
+
+// Upload a video (raw, no watermark) to the talent's folder; return public URL.
+async function uploadTalentVideo(file, talentId) {
+  validateVideoFile(file);
+  const ext = (file.name.split(".").pop() || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const fileName = `${talentId}/video_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const { data, error } = await supabase.storage
+    .from("talent-photos").upload(fileName, file, { cacheControl: "31536000", upsert: false, contentType: file.type });
+  if (error) throw error;
+  return supabase.storage.from("talent-photos").getPublicUrl(data.path).data.publicUrl;
+}
+
+// Upload a story (photo → watermarked, video → raw). Returns { url, media_type }.
+async function uploadTalentStory(file, talentId) {
+  const type = (file?.type || "").toLowerCase();
+  if (type.startsWith("image/")) {
+    const url = await uploadPhoto(file, talentId);
+    return { url, media_type: "photo" };
+  }
+  if (type.startsWith("video/")) {
+    const url = await uploadTalentVideo(file, talentId);
+    return { url, media_type: "video" };
+  }
+  throw new Error("Formato no permitido. Sube una imagen o un video.");
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANALYTICS HELPER
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -629,6 +667,12 @@ export default function TioJohnny() {
   const [formSizes, setFormSizes] = useState("");
   const [formNationality, setFormNationality] = useState("");
   const [formPhotos, setFormPhotos] = useState([]); // array of URLs (already uploaded)
+  const [formVideos, setFormVideos] = useState([]); // array of video URLs
+  const [videoUploading, setVideoUploading] = useState(false);
+  const videoInputRef = useRef(null);
+  const [editorStories, setEditorStories] = useState([]); // this talent's active stories
+  const [editorStoryBusy, setEditorStoryBusy] = useState(false);
+  const editorStoryRef = useRef(null);
   const [formInstagram, setFormInstagram] = useState("");
   const [formEmail, setFormEmail] = useState(""); // account email (not shown on profile)
   const [accessResult, setAccessResult] = useState(null); // { name, email, password, portalUrl }
@@ -1342,10 +1386,12 @@ export default function TioJohnny() {
       setFormSizes(talent.sizes || "");
       setFormNationality(talent.nationality || "");
       setFormPhotos(talent.photos || []);
+      setFormVideos(Array.isArray(talent.videos) ? talent.videos : []);
       setFormInstagram(talent.instagram || "");
       setFormEmail("");
       supabase.from("talent_private").select("email").eq("talent_id", talent.id).maybeSingle()
         .then(({ data }) => setFormEmail(data?.email || ""));
+      loadEditorStories(talent.id);
       setFormSection(talent.section || "main");
     } else {
       setEditorId(null);
@@ -1355,7 +1401,8 @@ export default function TioJohnny() {
       setFormHeight(""); setFormWeight(""); setFormEyes("");
       setFormHair(""); setFormAge(""); setFormSizes("");
       setFormNationality("");
-      setFormPhotos([]); setFormInstagram(""); setFormEmail("");
+      setFormPhotos([]); setFormVideos([]); setFormInstagram(""); setFormEmail("");
+      setEditorStories([]);
       setFormSection(adminSection); // new talent defaults to the section being managed
     }
     setView("editor");
@@ -1389,6 +1436,59 @@ export default function TioJohnny() {
     // Delete from storage
     try { await deletePhoto(url); } catch (e) { console.error(e); }
     setFormPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // ── Admin: videos (max 3) ──
+  const handleVideoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const tempId = editorId || "new_" + Date.now();
+    const remaining = 3 - formVideos.length;
+    if (remaining <= 0) { alert("Máximo 3 videos por perfil."); if (e.target) e.target.value = ""; return; }
+    setVideoUploading(true);
+    let lastError = "";
+    for (const file of files.slice(0, remaining)) {
+      try { const url = await uploadTalentVideo(file, tempId); setFormVideos((prev) => [...prev, url]); }
+      catch (err) { lastError = err?.message || "No se pudo subir el video."; }
+    }
+    setVideoUploading(false);
+    if (lastError) alert(lastError);
+    if (e.target) e.target.value = "";
+  };
+  const removeFormVideo = (index) => setFormVideos((prev) => prev.filter((_, i) => i !== index));
+  const moveFormVideo = (i, dir) => setFormVideos((prev) => {
+    const j = i + dir; if (j < 0 || j >= prev.length) return prev;
+    const c = [...prev]; [c[i], c[j]] = [c[j], c[i]]; return c;
+  });
+
+  // ── Admin: stories (saved immediately, max 5/24h) ──
+  const loadEditorStories = async (talentId) => {
+    const { data } = await supabase.from("stories").select("*").eq("talent_id", talentId).order("created_at", { ascending: false });
+    setEditorStories(data || []);
+  };
+  const handleAddEditorStory = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (!editorId) { alert("Guarda el perfil primero para agregar historias."); if (e.target) e.target.value = ""; return; }
+    setEditorStoryBusy(true);
+    let lastError = "";
+    for (const file of files) {
+      try {
+        const { url, media_type } = await uploadTalentStory(file, editorId);
+        const { error } = await supabase.from("stories").insert([{ talent_id: editorId, media_url: url, media_type }]);
+        if (error) throw new Error(error.message.includes("STORY_LIMIT") ? "Máximo 5 historias cada 24 horas." : error.message);
+      } catch (err) { lastError = err?.message || "No se pudo subir la historia."; }
+    }
+    setEditorStoryBusy(false);
+    if (lastError) alert(lastError);
+    await loadEditorStories(editorId);
+    fetchStories();
+    if (e.target) e.target.value = "";
+  };
+  const deleteEditorStory = async (id) => {
+    await supabase.from("stories").delete().eq("id", id);
+    if (editorId) loadEditorStories(editorId);
+    fetchStories();
   };
 
   // ─── Field auto-formatters (run onBlur) ───────────────────────────────
@@ -1498,6 +1598,7 @@ export default function TioJohnny() {
       sizes: formSizes,
       nationality: formNationality,
       photos: formPhotos,
+      videos: formVideos,
       instagram: formInstagram,
       section: formSection,
     };
@@ -3227,6 +3328,70 @@ export default function TioJohnny() {
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={handlePhotoUpload} className="hidden" />
             <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>Arrastra las fotos para reordenar. La primera es la principal. En móvil usa las flechas.</p>
+          </div>
+
+          {/* Videos (max 3) */}
+          <div className="mb-6">
+            <label className="text-xs font-medium mb-2 block" style={{ color: "#9898b0" }}>Videos <span style={{ color: "#4a4a6a" }}>(máx 3)</span></label>
+            <div className="flex gap-3 flex-wrap">
+              {formVideos.map((url, i) => (
+                <div key={url} className="relative rounded-xl overflow-hidden" style={{ width: 72, height: 96, background: "#000" }}>
+                  <video src={url} muted playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                  <div className="absolute top-1 left-1 px-1 rounded" style={{ background: "rgba(0,0,0,0.6)", fontSize: 8, color: "#fff" }}>▶</div>
+                  <button onClick={(e) => { e.stopPropagation(); removeFormVideo(i); }} className="absolute top-1 right-1 p-1 rounded-full" style={{ background: "rgba(244,63,94,0.9)" }}>
+                    <X size={10} color="#fff" />
+                  </button>
+                  {formVideos.length > 1 && (
+                    <div className="absolute bottom-0 left-0 right-0 flex justify-between px-1 py-0.5" style={{ background: "rgba(0,0,0,0.6)" }}>
+                      <button onClick={(e) => { e.stopPropagation(); moveFormVideo(i, -1); }} disabled={i === 0} style={{ opacity: i === 0 ? 0.3 : 1 }}><ChevronLeft size={12} color="#fff" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); moveFormVideo(i, 1); }} disabled={i === formVideos.length - 1} style={{ opacity: i === formVideos.length - 1 ? 0.3 : 1 }}><ChevronRight size={12} color="#fff" /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {formVideos.length < 3 && (
+                <button onClick={() => videoInputRef.current?.click()} disabled={videoUploading} className="flex flex-col items-center justify-center gap-1 rounded-xl transition-all active:scale-95" style={{ width: 72, height: 96, border: "2px dashed #2a2a4a", color: "#7878a0" }}>
+                  {videoUploading ? <Loader2 size={20} className="animate-spin" /> : <span style={{ fontSize: 20 }}>🎥</span>}
+                  <span style={{ fontSize: 9 }}>{videoUploading ? "Subiendo..." : "Subir"}</span>
+                </button>
+              )}
+            </div>
+            <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm" multiple onChange={handleVideoUpload} className="hidden" />
+            <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>MP4, MOV o WebM · hasta 50 MB cada uno.</p>
+          </div>
+
+          {/* Stories (24h) */}
+          <div className="mb-6">
+            <label className="text-xs font-medium mb-2 block" style={{ color: "#9898b0" }}>Historias <span style={{ color: "#4a4a6a" }}>(duran 24 h · máx 5)</span></label>
+            {!editorId ? (
+              <p className="text-xs" style={{ color: "#4a4a6a" }}>Guarda el perfil primero para poder agregar historias.</p>
+            ) : (
+              <>
+                <div className="flex gap-3 flex-wrap">
+                  {editorStories.map((s) => (
+                    <div key={s.id} className="relative rounded-xl overflow-hidden" style={{ width: 72, height: 96, background: "#000" }}>
+                      {s.media_type === "video"
+                        ? <video src={s.media_url} muted playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                        : <img src={s.media_url} alt="" className="w-full h-full object-cover pointer-events-none" />}
+                      <div className="absolute top-1 left-1 px-1 rounded" style={{ background: "rgba(0,0,0,0.6)", fontSize: 8, color: "#fff" }}>
+                        {s.media_type === "video" ? "▶ " : ""}{Math.max(0, Math.round((new Date(s.expires_at).getTime() - Date.now()) / 3600000))}h
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); deleteEditorStory(s.id); }} className="absolute top-1 right-1 p-1 rounded-full" style={{ background: "rgba(244,63,94,0.9)" }}>
+                        <X size={10} color="#fff" />
+                      </button>
+                    </div>
+                  ))}
+                  {editorStories.length < 5 && (
+                    <button onClick={() => editorStoryRef.current?.click()} disabled={editorStoryBusy} className="flex flex-col items-center justify-center gap-1 rounded-xl transition-all active:scale-95" style={{ width: 72, height: 96, border: "2px dashed #2a2a4a", color: "#7878a0" }}>
+                      {editorStoryBusy ? <Loader2 size={20} className="animate-spin" /> : <span style={{ fontSize: 20 }}>＋</span>}
+                      <span style={{ fontSize: 9 }}>{editorStoryBusy ? "Subiendo..." : "Historia"}</span>
+                    </button>
+                  )}
+                </div>
+                <input ref={editorStoryRef} type="file" accept="image/*,video/mp4,video/quicktime,video/webm" multiple onChange={handleAddEditorStory} className="hidden" />
+                <p className="text-xs mt-2" style={{ color: "#4a4a6a" }}>Foto o video · desaparecen a las 24 h.</p>
+              </>
+            )}
           </div>
 
           {/* Form fields */}
