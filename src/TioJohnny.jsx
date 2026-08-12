@@ -622,6 +622,9 @@ export default function TioJohnny() {
   const [formNationality, setFormNationality] = useState("");
   const [formPhotos, setFormPhotos] = useState([]); // array of URLs (already uploaded)
   const [formInstagram, setFormInstagram] = useState("");
+  const [formEmail, setFormEmail] = useState(""); // account email (not shown on profile)
+  const [accessResult, setAccessResult] = useState(null); // { name, email, password, portalUrl }
+  const [accessBusy, setAccessBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
@@ -710,6 +713,7 @@ export default function TioJohnny() {
   const [regHair, setRegHair] = useState("");
   const [regSizes, setRegSizes] = useState("");
   const [regInstagram, setRegInstagram] = useState("");
+  const [regEmail, setRegEmail] = useState("");
   const [regSpecialty, setRegSpecialty] = useState("");
   const [regSection, setRegSection] = useState("main"); // which site section the applicant wants to appear in
   const [regUploading, setRegUploading] = useState(false);
@@ -1289,6 +1293,7 @@ export default function TioJohnny() {
       setFormNationality(talent.nationality || "");
       setFormPhotos(talent.photos || []);
       setFormInstagram(talent.instagram || "");
+      setFormEmail(talent.email || "");
       setFormSection(talent.section || "main");
     } else {
       setEditorId(null);
@@ -1298,7 +1303,7 @@ export default function TioJohnny() {
       setFormHeight(""); setFormWeight(""); setFormEyes("");
       setFormHair(""); setFormAge(""); setFormSizes("");
       setFormNationality("");
-      setFormPhotos([]); setFormInstagram("");
+      setFormPhotos([]); setFormInstagram(""); setFormEmail("");
       setFormSection(adminSection); // new talent defaults to the section being managed
     }
     setView("editor");
@@ -1375,6 +1380,29 @@ export default function TioJohnny() {
     return digits;
   };
 
+  // Create a portal login for this talent and link it to the profile.
+  const handleCreateAccess = async () => {
+    const email = formEmail.trim().toLowerCase();
+    if (!editorId) { alert("Guarda el perfil primero."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Ingresa un email válido para la cuenta."); return; }
+    if (!confirm(`¿Crear acceso al portal para ${formName || "esta modelo"} con el email ${email}?`)) return;
+    setAccessBusy(true);
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/create-model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${s?.access_token}` },
+        body: JSON.stringify({ talentId: editorId, email }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.message || "No se pudo crear el acceso."); }
+      else { setAccessResult(data); fetchTalents(); }
+    } catch (e) {
+      alert("Error de conexión al crear el acceso.");
+    }
+    setAccessBusy(false);
+  };
+
   const handleSaveProfile = async () => {
     if (!formName.trim()) return;
     setSaving(true);
@@ -1398,6 +1426,7 @@ export default function TioJohnny() {
       nationality: formNationality,
       photos: formPhotos,
       instagram: formInstagram,
+      email: formEmail.trim().toLowerCase() || null,
       section: formSection,
     };
 
@@ -1530,6 +1559,8 @@ export default function TioJohnny() {
     const errors = {};
     if (!regPhotos.length) errors.photos = "Agrega al menos 1 foto";
     if (!regName.trim()) errors.name = "El nombre es obligatorio";
+    if (!regEmail.trim()) errors.email = "El email es obligatorio";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail.trim())) errors.email = "Email inválido";
     if (!regLocation) errors.location = "Selecciona tu comuna";
     if (!regAge.trim()) errors.age = "La edad es obligatoria";
     if (!regNationality) errors.nationality = "Selecciona tu nacionalidad";
@@ -1541,6 +1572,7 @@ export default function TioJohnny() {
     const maxOrder = talents.length > 0 ? Math.max(...talents.map((t) => t.sort_order ?? 0)) : 0;
     await supabase.from("talents").insert([{
       name: regName.trim(),
+      email: regEmail.trim().toLowerCase(),
       phone: fmtPhone(regPhone),
       age: regAge.trim(),
       nationality: regNationality,
@@ -3273,6 +3305,52 @@ export default function TioJohnny() {
                 <input value={formInstagram} onChange={(e) => setFormInstagram(e.target.value)} onBlur={() => setFormInstagram(fmtInstagram(formInstagram))} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="@valentina.rojas" />
               </div>
             </div>
+
+            {/* Account / portal access */}
+            <div style={{ borderTop: "1px solid rgba(139,92,246,0.15)", paddingTop: 14 }}>
+              <label className="text-xs font-semibold uppercase tracking-widest mb-2 block" style={{ color: "#8B5CF6" }}>Cuenta · Acceso al portal</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Email (para su cuenta — no se muestra en el perfil)</label>
+              <input value={formEmail} onChange={(e) => setFormEmail(e.target.value)} type="email" inputMode="email" className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="modelo@ejemplo.com" />
+              {(() => {
+                const linked = talents.find((t) => t.id === editorId)?.owner_id;
+                if (linked) return <p style={{ fontSize: 12, color: "#22c55e", marginTop: 8 }}>✅ Ya tiene acceso al portal.</p>;
+                return (
+                  <button type="button" onClick={handleCreateAccess} disabled={accessBusy || !editorId}
+                    className="mt-3 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                    style={{ background: "rgba(139,92,246,0.15)", color: "#8B5CF6", border: "1px solid rgba(139,92,246,0.4)", opacity: (accessBusy || !editorId) ? 0.5 : 1 }}>
+                    {accessBusy ? "Creando acceso…" : "🔑 Crear acceso al portal"}
+                  </button>
+                );
+              })()}
+              {!editorId && <p style={{ fontSize: 11, color: "#7878a0", marginTop: 6 }}>Guarda el perfil primero para poder crear el acceso.</p>}
+            </div>
+
+            {accessResult && (
+              <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setAccessResult(null)}>
+                <div onClick={(e) => e.stopPropagation()} style={{ background: "#1e1e3a", borderRadius: 18, padding: 24, maxWidth: 420, width: "100%" }}>
+                  <h3 style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>✅ Acceso creado</h3>
+                  <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 16 }}>Envíale estos datos por WhatsApp. La clave es temporal — puede cambiarla en el portal.</p>
+                  <div style={{ background: "#12122a", borderRadius: 12, padding: 14, fontSize: 14, lineHeight: 1.9 }}>
+                    <div>🔗 <b>Portal:</b> tiojohnny.cl/portal</div>
+                    <div>📧 <b>Email:</b> {accessResult.email}</div>
+                    <div>🔑 <b>Clave:</b> <span style={{ fontFamily: "monospace" }}>{accessResult.password}</span></div>
+                  </div>
+                  {(() => {
+                    const msg = `Hola! Ya puedes administrar tu perfil en TioJohnny 💜\n\nPortal: https://tiojohnny.cl/portal\nEmail: ${accessResult.email}\nClave temporal: ${accessResult.password}\n\nEntra y cámbiala por una tuya 😉`;
+                    const waPhone = formPhone ? fmtPhone(formPhone).replace(/[^0-9]/g, "") : "";
+                    return (
+                      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                        <button onClick={() => { navigator.clipboard?.writeText(msg); }}
+                          style={{ flex: 1, background: "rgba(139,92,246,0.15)", color: "#8B5CF6", border: "1px solid rgba(139,92,246,0.4)", borderRadius: 12, padding: "10px", fontSize: 13, fontWeight: 600 }}>Copiar mensaje</button>
+                        {waPhone && <a href={`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer"
+                          style={{ flex: 1, textAlign: "center", background: "#25D366", color: "#fff", borderRadius: 12, padding: "10px", fontSize: 13, fontWeight: 700 }}>WhatsApp</a>}
+                      </div>
+                    );
+                  })()}
+                  <button onClick={() => setAccessResult(null)} style={{ width: "100%", marginTop: 10, color: "#9898b0", fontSize: 13 }}>Cerrar</button>
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Sobre (descripción)</label>
               <textarea value={formAbout} onChange={(e) => setFormAbout(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none resize-none" style={inputStyle} placeholder="Describe la trayectoria y especialidad..." />
@@ -3420,6 +3498,11 @@ export default function TioJohnny() {
           {/* Mandatory fields */}
           <Field label="Nombre" required error={regErrors.name}>
             <input className={inp} style={inpErrStyle("name")} placeholder="Ej: Valentina Rojas" value={regName} onChange={(e) => setRegName(e.target.value)} />
+          </Field>
+
+          <Field label="Email" required error={regErrors.email}>
+            <input className={inp} style={inpErrStyle("email")} placeholder="tucorreo@ejemplo.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} inputMode="email" type="email" />
+            <p style={{ fontSize: 11, color: "#7878a0", marginTop: 5 }}>Solo para tu registro y acceso a tu cuenta — <b>no se muestra en tu perfil</b>.</p>
           </Field>
 
           <Field label="Teléfono / WhatsApp" required error={regErrors.phone}>

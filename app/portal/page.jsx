@@ -80,7 +80,26 @@ export default function PortalPage() {
   const [uploadErr, setUploadErr] = useState("");
   const fileRef = useRef(null);
 
+  // change password
+  const [newPass, setNewPass] = useState("");
+  const [newPass2, setNewPass2] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleChangePassword = async () => {
+    setPwMsg("");
+    if (newPass.length < 6) { setPwMsg("La contraseña debe tener al menos 6 caracteres."); return; }
+    if (newPass !== newPass2) { setPwMsg("Las contraseñas no coinciden."); return; }
+    setPwBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    setPwBusy(false);
+    if (error) { setPwMsg("Error: " + error.message); return; }
+    setNewPass(""); setNewPass2("");
+    setPwMsg("¡Contraseña actualizada! ✅");
+    setTimeout(() => setPwMsg(""), 3000);
+  };
 
   const loadTalent = useCallback(async (userId) => {
     const { data } = await supabase.from("talents").select("*").eq("owner_id", userId).limit(1).maybeSingle();
@@ -307,6 +326,24 @@ export default function PortalPage() {
             </div>
           </section>
         )}
+
+        {/* Change password */}
+        <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, marginBottom: 12 }}>Seguridad</h2>
+          <div className="space-y-3">
+            <Field label="Nueva contraseña">
+              <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Mínimo 6 caracteres" style={inputStyle} />
+            </Field>
+            <Field label="Repetir contraseña">
+              <input type="password" value={newPass2} onChange={(e) => setNewPass2(e.target.value)} placeholder="Repite la contraseña" style={inputStyle} />
+            </Field>
+            {pwMsg && <p style={{ fontSize: 13, color: pwMsg.startsWith("Error") || pwMsg.includes("no coinciden") || pwMsg.includes("al menos") ? "#f87171" : "#22c55e" }}>{pwMsg}</p>}
+            <button onClick={handleChangePassword} disabled={pwBusy || !newPass}
+              style={{ background: "rgba(139,92,246,0.15)", color: ACCENT, border: "1px solid rgba(139,92,246,0.4)", borderRadius: 12, padding: "10px 18px", fontSize: 14, fontWeight: 600, opacity: pwBusy || !newPass ? 0.5 : 1 }}>
+              {pwBusy ? "Guardando…" : "Cambiar contraseña"}
+            </button>
+          </div>
+        </section>
       </main>
 
       {/* Save bar */}
