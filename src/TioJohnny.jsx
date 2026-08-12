@@ -685,6 +685,19 @@ export default function TioJohnny() {
   const [accessResult, setAccessResult] = useState(null); // { name, email, password, portalUrl }
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessCopied, setAccessCopied] = useState(false);
+  const [portalStatus, setPortalStatus] = useState({}); // { [userId]: { activated, hasSignedIn, lastSignInAt } }
+
+  const fetchPortalStatus = async () => {
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/portal-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${s?.access_token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.status) setPortalStatus(data.status);
+    } catch (_) {}
+  };
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
@@ -836,6 +849,7 @@ export default function TioJohnny() {
       fetchAnalytics();
     } else if (myRole === "admin") {
       fetchPending();
+      fetchPortalStatus();
     }
   }, [session, myRole]);
 
@@ -3623,16 +3637,25 @@ export default function TioJohnny() {
               <input value={formEmail} onChange={(e) => setFormEmail(e.target.value)} type="email" inputMode="email" className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="modelo@ejemplo.com" />
               {(() => {
                 const linked = talents.find((t) => t.id === editorId)?.owner_id;
-                if (linked) return (
-                  <div className="mt-2">
-                    <p style={{ fontSize: 12, color: "#22c55e", marginBottom: 8 }}>✅ Ya tiene acceso al portal.</p>
-                    <button type="button" onClick={handleResetAccess} disabled={accessBusy}
-                      className="px-4 py-2.5 rounded-xl text-sm font-semibold"
-                      style={{ background: "rgba(236,72,153,0.12)", color: "#ec4899", border: "1px solid rgba(236,72,153,0.4)", opacity: accessBusy ? 0.5 : 1 }}>
-                      {accessBusy ? "Restableciendo…" : "🔄 Restablecer contraseña"}
-                    </button>
-                  </div>
-                );
+                if (linked) {
+                  const st = portalStatus[linked];
+                  const badge = st?.activated
+                    ? { t: "✅ Cuenta activada (ya cambió su contraseña)", c: "#22c55e" }
+                    : st?.hasSignedIn
+                      ? { t: "⏳ Ingresó, pero aún no cambia su contraseña", c: "#f59e0b" }
+                      : { t: "🕓 Pendiente — aún no ha ingresado", c: "#9898b0" };
+                  return (
+                    <div className="mt-2">
+                      <p style={{ fontSize: 12, color: "#22c55e", marginBottom: 4 }}>Tiene acceso al portal.</p>
+                      <p style={{ fontSize: 12, color: badge.c, marginBottom: 8, fontWeight: 600 }}>{badge.t}</p>
+                      <button type="button" onClick={handleResetAccess} disabled={accessBusy}
+                        className="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{ background: "rgba(236,72,153,0.12)", color: "#ec4899", border: "1px solid rgba(236,72,153,0.4)", opacity: accessBusy ? 0.5 : 1 }}>
+                        {accessBusy ? "Restableciendo…" : "🔄 Restablecer contraseña"}
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                   <button type="button" onClick={handleCreateAccess} disabled={accessBusy || !editorId}
                     className="mt-3 px-4 py-2.5 rounded-xl text-sm font-semibold"
@@ -5027,6 +5050,13 @@ export default function TioJohnny() {
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-bold text-white truncate">{t.name}</h3>
                 <p className="text-xs truncate" style={{ color: "#8B5CF6" }}>{t.specialty}</p>
+                {t.owner_id && (() => {
+                  const st = portalStatus[t.owner_id];
+                  const b = st?.activated
+                    ? { t: "Activada", c: "#22c55e" }
+                    : st?.hasSignedIn ? { t: "Ingresó, falta clave", c: "#f59e0b" } : { t: "Pendiente", c: "#9898b0" };
+                  return <span style={{ fontSize: 9, fontWeight: 700, color: b.c, border: `1px solid ${b.c}`, borderRadius: 6, padding: "1px 5px", marginTop: 3, display: "inline-block" }}>🔑 {b.t}</span>;
+                })()}
                 <div className="flex flex-wrap gap-1 mt-0.5">
                   {getTalentCategories(t).map((c) => (
                     <span key={c} className="text-white px-1.5 py-0.5 rounded" style={{ fontSize: 9, background: "#8B5CF6" }}>{c}</span>
