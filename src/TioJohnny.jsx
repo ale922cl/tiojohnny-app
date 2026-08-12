@@ -1455,6 +1455,27 @@ export default function TioJohnny() {
     setAccessBusy(false);
   };
 
+  // Reset a talent's portal password → new temp password (forces change on next login)
+  const handleResetAccess = async () => {
+    if (!editorId) return;
+    if (!confirm(`¿Restablecer la contraseña de ${formName || "esta modelo"}? Se generará una clave temporal nueva.`)) return;
+    setAccessBusy(true);
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${s?.access_token}` },
+        body: JSON.stringify({ talentId: editorId }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data.message || "No se pudo restablecer la contraseña.");
+      else { setAccessResult(data); setAccessCopied(false); }
+    } catch (e) {
+      alert("Error de conexión al restablecer la contraseña.");
+    }
+    setAccessBusy(false);
+  };
+
   const handleSaveProfile = async () => {
     if (!formName.trim()) return;
     setSaving(true);
@@ -3373,7 +3394,16 @@ export default function TioJohnny() {
               <input value={formEmail} onChange={(e) => setFormEmail(e.target.value)} type="email" inputMode="email" className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="modelo@ejemplo.com" />
               {(() => {
                 const linked = talents.find((t) => t.id === editorId)?.owner_id;
-                if (linked) return <p style={{ fontSize: 12, color: "#22c55e", marginTop: 8 }}>✅ Ya tiene acceso al portal.</p>;
+                if (linked) return (
+                  <div className="mt-2">
+                    <p style={{ fontSize: 12, color: "#22c55e", marginBottom: 8 }}>✅ Ya tiene acceso al portal.</p>
+                    <button type="button" onClick={handleResetAccess} disabled={accessBusy}
+                      className="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                      style={{ background: "rgba(236,72,153,0.12)", color: "#ec4899", border: "1px solid rgba(236,72,153,0.4)", opacity: accessBusy ? 0.5 : 1 }}>
+                      {accessBusy ? "Restableciendo…" : "🔄 Restablecer contraseña"}
+                    </button>
+                  </div>
+                );
                 return (
                   <button type="button" onClick={handleCreateAccess} disabled={accessBusy || !editorId}
                     className="mt-3 px-4 py-2.5 rounded-xl text-sm font-semibold"
@@ -3388,15 +3418,17 @@ export default function TioJohnny() {
             {accessResult && (
               <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setAccessResult(null)}>
                 <div onClick={(e) => e.stopPropagation()} style={{ background: "#1e1e3a", borderRadius: 18, padding: 24, maxWidth: 420, width: "100%" }}>
-                  <h3 style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>✅ Acceso creado</h3>
-                  <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 16 }}>Envíale estos datos por WhatsApp. La clave es temporal — puede cambiarla en el portal.</p>
+                  <h3 style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{accessResult.reset ? "🔄 Contraseña restablecida" : "✅ Acceso creado"}</h3>
+                  <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 16 }}>Envíale estos datos por WhatsApp. Deberá crear una contraseña nueva al ingresar.</p>
                   <div style={{ background: "#12122a", borderRadius: 12, padding: 14, fontSize: 14, lineHeight: 1.9 }}>
                     <div>🔗 <b>Portal:</b> tiojohnny.cl/portal</div>
                     <div>📧 <b>Email:</b> {accessResult.email}</div>
                     <div>🔑 <b>Clave:</b> <span style={{ fontFamily: "monospace" }}>{accessResult.password}</span></div>
                   </div>
                   {(() => {
-                    const msg = `Hola! Ya puedes administrar tu perfil en TioJohnny 💜\n\nPortal: https://tiojohnny.cl/portal\nEmail: ${accessResult.email}\nClave temporal: ${accessResult.password}\n\nEntra y cámbiala por una tuya 😉`;
+                    const msg = accessResult.reset
+                      ? `Hola! Aquí está tu nueva clave temporal para TioJohnny 💜\n\nPortal: https://tiojohnny.cl/portal\nEmail: ${accessResult.email}\nClave temporal: ${accessResult.password}\n\nAl entrar te pedirá crear una contraseña nueva 😉`
+                      : `Hola! Ya puedes administrar tu perfil en TioJohnny 💜\n\nPortal: https://tiojohnny.cl/portal\nEmail: ${accessResult.email}\nClave temporal: ${accessResult.password}\n\nAl entrar te pedirá crear una contraseña nueva 😉`;
                     const waPhone = formPhone ? fmtPhone(formPhone).replace(/[^0-9]/g, "") : "";
                     return (
                       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
