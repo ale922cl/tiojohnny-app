@@ -627,6 +627,13 @@ export default function TioJohnny() {
   const [selectedTalent, setSelectedTalent] = useState(null);
   const [stories, setStories] = useState([]);            // active (non-expired) stories
   const [storyView, setStoryView] = useState(null);      // { talentId, si } or null
+  const [seenStories, setSeenStories] = useState(() => new Set()); // story ids already watched (persisted)
+  const markStorySeen = (id) => setSeenStories((prev) => {
+    if (prev.has(id)) return prev;
+    const next = new Set(prev); next.add(id);
+    try { localStorage.setItem("tj_seen_stories", JSON.stringify([...next])); } catch (_) {}
+    return next;
+  });
   const [spotlightTalent, setSpotlightTalent] = useState(null);
   const [countersShown, setCountersShown] = useState(false);
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
@@ -1293,11 +1300,40 @@ export default function TioJohnny() {
 
   // ── Stories: which talents (current section, visible) have active stories ──
   const getTalentStories = (talentId) => stories.filter((s) => s.talent_id === talentId);
+  const talentHasUnseen = (t) => getTalentStories(t.id).some((s) => !seenStories.has(s.id));
+  const talentLatestStory = (t) => Math.max(0, ...getTalentStories(t.id).map((s) => new Date(s.created_at).getTime()));
   const storyTalents = [...new Set(stories.map((s) => s.talent_id))]
     .map((id) => talents.find((t) => t.id === id))
-    .filter((t) => t && !t.archived && t.status !== "pendiente" && (t.section || "main") === siteSection);
+    .filter((t) => t && !t.archived && t.status !== "pendiente" && (t.section || "main") === siteSection)
+    .sort((a, b) => {
+      // Unseen rings first, then most-recent story first
+      const u = (talentHasUnseen(b) ? 1 : 0) - (talentHasUnseen(a) ? 1 : 0);
+      return u !== 0 ? u : talentLatestStory(b) - talentLatestStory(a);
+    });
 
-  const openStory = (talentId) => { trackEvent("story_view", talentId); setStoryView({ talentId, si: 0 }); };
+  // Load seen-stories from localStorage once
+  useEffect(() => {
+    try { const raw = localStorage.getItem("tj_seen_stories"); if (raw) setSeenStories(new Set(JSON.parse(raw))); } catch (_) {}
+  }, []);
+  // Prune seen ids down to currently-active stories so it never grows unbounded
+  useEffect(() => {
+    if (!stories.length) return;
+    const active = new Set(stories.map((s) => s.id));
+    setSeenStories((prev) => {
+      const kept = [...prev].filter((id) => active.has(id));
+      if (kept.length === prev.size) return prev;
+      try { localStorage.setItem("tj_seen_stories", JSON.stringify(kept)); } catch (_) {}
+      return new Set(kept);
+    });
+  }, [stories]);
+
+  const openStory = (talentId) => {
+    trackEvent("story_view", talentId);
+    const list = getTalentStories(talentId);
+    let si = list.findIndex((s) => !seenStories.has(s.id)); // start at first unseen
+    if (si < 0) si = 0;
+    setStoryView({ talentId, si });
+  };
   const storyAdvance = () => setStoryView((v) => {
     if (!v) return v;
     const list = getTalentStories(v.talentId);
@@ -1305,12 +1341,13 @@ export default function TioJohnny() {
   });
   const storyPrev = () => setStoryView((v) => (v && v.si > 0 ? { ...v, si: v.si - 1 } : v));
 
-  // Auto-advance photo stories after 5s (videos advance when they end)
+  // Auto-advance photo stories after 5s (videos advance when they end); mark seen
   useEffect(() => {
     if (!storyView) return;
     const list = getTalentStories(storyView.talentId);
     const cur = list[storyView.si];
     if (!cur) { setStoryView(null); return; }
+    markStorySeen(cur.id);
     if (cur.media_type === "photo") {
       const t = setTimeout(() => storyAdvance(), 5000);
       return () => clearTimeout(t);
@@ -5719,11 +5756,29 @@ export default function TioJohnny() {
             <div className="flex gap-3 overflow-x-auto px-3 pb-3 pt-1" style={{ scrollbarWidth: "none" }}>
               {storyTalents.map((t) => (
                 <button key={`story-${t.id}`} onClick={() => openStory(t.id)} className="flex flex-col items-center gap-1 flex-shrink-0" style={{ width: 68 }}>
-                  <div style={{ padding: 2, borderRadius: "50%", background: "linear-gradient(135deg, #8B5CF6, #ec4899)" }}>
-                    <div style={{ padding: 2, borderRadius: "50%", background: "#12122a" }}>
-                      <img src={getMainPhoto(t)} alt={t.name} style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} />
-                    </div>
-                  </div>
+                  {(() => {
+                    const list = getTalentStories(t.id);
+                    const N = Math.max(1, list.length);
+                    const R = 29, C = 2 * Math.PI * R;
+                    const gap = N > 1 ? 10 : 0;
+                    const seg = C / N - gap;
+                    return (
+                      <div style={{ position: "relative", width: 64, height: 64 }}>
+                        <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: "rotate(-90deg)" }}>
+                          {Array.from({ length: N }).map((_, i) => {
+                            const s = list[i];
+                            const seen = s ? seenStories.has(s.id) : true;
+                            return (
+                              <circle key={i} cx="32" cy="32" r={R} fill="none"
+                                stroke={seen ? "#3a3a52" : "#a855f7"} strokeWidth="3"
+                                strokeDasharray={`${seg} ${C}`} strokeDashoffset={-(i * (C / N))} strokeLinecap="round" />
+                            );
+                          })}
+                        </svg>
+                        <img src={getMainPhoto(t)} alt={t.name} style={{ position: "absolute", top: 5, left: 5, width: 54, height: 54, borderRadius: "50%", objectFit: "cover" }} />
+                      </div>
+                    );
+                  })()}
                   <span className="truncate w-full text-center" style={{ fontSize: 11, color: "#c4c4d8" }}>{t.name}</span>
                 </button>
               ))}
