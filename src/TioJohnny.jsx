@@ -4959,6 +4959,18 @@ export default function TioJohnny() {
               <p className="text-sm leading-relaxed" style={{ color: "#c4c4d8" }}>{t.about}</p>
             </div>
           )}
+          {Array.isArray(t.videos) && t.videos.length > 0 && (
+            <div className="mt-5">
+              <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Videos</h3>
+              <div className="flex gap-3 overflow-x-auto pb-1" style={{ scrollSnapType: "x mandatory" }}>
+                {t.videos.map((url, i) => (
+                  <video key={i} src={url} controls playsInline preload="metadata"
+                    className="rounded-xl flex-shrink-0"
+                    style={{ width: 200, aspectRatio: "3/4", objectFit: "cover", background: "#000", scrollSnapAlign: "start" }} />
+                ))}
+              </div>
+            </div>
+          )}
           {experienceList.length > 0 && (
             <div className="mt-5">
               <h3 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "#8B5CF6" }}>Servicios</h3>
