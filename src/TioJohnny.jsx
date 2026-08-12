@@ -5127,37 +5127,6 @@ export default function TioJohnny() {
       </div>
 
       {/* ── Lightbox: full-screen photo viewer ── */}
-      {storyView && (() => {
-        const st = talents.find((x) => x.id === storyView.talentId);
-        const list = getTalentStories(storyView.talentId);
-        const cur = list[storyView.si];
-        if (!st || !cur) return null;
-        const ago = Math.max(0, Math.round((Date.now() - new Date(cur.created_at).getTime()) / 3600000));
-        return (
-          <div className="fixed inset-0 z-[110] flex flex-col" style={{ background: "#000" }}>
-            <div className="flex gap-1 px-3 pt-3" style={{ zIndex: 5 }}>
-              {list.map((_, i) => (
-                <div key={i} style={{ flex: 1, height: 3, borderRadius: 3, background: i <= storyView.si ? "#fff" : "rgba(255,255,255,0.3)" }} />
-              ))}
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2" style={{ zIndex: 5 }}>
-              <img src={getMainPhoto(st)} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
-              <span style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{st.name}</span>
-              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>hace {ago}h</span>
-              <button onClick={() => setStoryView(null)} className="ml-auto p-1"><X size={24} color="#fff" /></button>
-            </div>
-            <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-              {cur.media_type === "video"
-                ? <video key={cur.id} src={cur.media_url} autoPlay muted playsInline onEnded={storyAdvance} style={{ maxWidth: "100%", maxHeight: "100%" }} />
-                : <img key={cur.id} src={cur.media_url} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />}
-              <button onClick={storyPrev} aria-label="Anterior" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "33%", background: "transparent" }} />
-              <button onClick={storyAdvance} aria-label="Siguiente" style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "67%", background: "transparent" }} />
-            </div>
-            <button onClick={() => { setStoryView(null); openProfile(st); }} className="mx-auto mb-6 mt-3 px-5 py-2 rounded-full text-sm font-semibold" style={{ background: "#8B5CF6", color: "#fff", zIndex: 5 }}>Ver perfil</button>
-          </div>
-        );
-      })()}
-
       {lightboxIndex !== null && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden"
@@ -5871,6 +5840,38 @@ export default function TioJohnny() {
       </div>{/* end max-w-screen-xl */}
 
       {renderDetail()}
+
+      {/* ── Story viewer (top-level so it opens from the home ring too) ── */}
+      {storyView && (() => {
+        const st = talents.find((x) => x.id === storyView.talentId);
+        const list = getTalentStories(storyView.talentId);
+        const cur = list[storyView.si];
+        if (!st || !cur) return null;
+        const ago = Math.max(0, Math.round((Date.now() - new Date(cur.created_at).getTime()) / 3600000));
+        return (
+          <div className="fixed inset-0 z-[110] flex flex-col" style={{ background: "#000" }}>
+            <div className="flex gap-1 px-3 pt-3" style={{ zIndex: 5 }}>
+              {list.map((_, i) => (
+                <div key={i} style={{ flex: 1, height: 3, borderRadius: 3, background: i <= storyView.si ? "#fff" : "rgba(255,255,255,0.3)" }} />
+              ))}
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2" style={{ zIndex: 5 }}>
+              <img src={getMainPhoto(st)} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+              <span style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{st.name}</span>
+              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>hace {ago}h</span>
+              <button onClick={() => setStoryView(null)} className="ml-auto p-1"><X size={24} color="#fff" /></button>
+            </div>
+            <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+              {cur.media_type === "video"
+                ? <video key={cur.id} src={cur.media_url} autoPlay muted playsInline onEnded={storyAdvance} style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                : <img key={cur.id} src={cur.media_url} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />}
+              <button onClick={storyPrev} aria-label="Anterior" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "33%", background: "transparent" }} />
+              <button onClick={storyAdvance} aria-label="Siguiente" style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "67%", background: "transparent" }} />
+            </div>
+            <button onClick={() => { setStoryView(null); openProfile(st); }} className="mx-auto mb-6 mt-3 px-5 py-2 rounded-full text-sm font-semibold" style={{ background: "#8B5CF6", color: "#fff", zIndex: 5 }}>Ver perfil</button>
+          </div>
+        );
+      })()}
 
       {/* ── Spotlight / Dark Room Mode ── */}
       {spotlightTalent && (() => {
