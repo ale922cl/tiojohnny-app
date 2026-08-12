@@ -1335,7 +1335,7 @@ export default function TioJohnny() {
     setLoginLoading(true);
     setLoginError("");
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: loginEmail,
+      email: loginEmail.trim().toLowerCase(),
       password: loginPassword,
     });
     setLoginLoading(false);
@@ -3225,7 +3225,7 @@ export default function TioJohnny() {
           <div className="space-y-4">
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Email</label>
-              <input type="email" value={loginEmail} onChange={(e) => { setLoginEmail(e.target.value); setLoginError(""); }} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="tu@email.com" />
+              <input type="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={loginEmail} onChange={(e) => { setLoginEmail(e.target.value); setLoginError(""); }} className="w-full px-4 py-3 rounded-xl text-sm text-white outline-none" style={inputStyle} placeholder="tu@email.com" />
             </div>
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: "#9898b0" }}>Contraseña</label>

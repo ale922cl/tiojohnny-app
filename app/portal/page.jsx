@@ -178,7 +178,7 @@ export default function PortalPage() {
   const handleLogin = async () => {
     setLoginErr("");
     setLoggingIn(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     if (error) setLoginErr("Email o contraseña incorrectos.");
     setLoggingIn(false);
   };
@@ -187,7 +187,7 @@ export default function PortalPage() {
     setLoginErr("");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setLoginErr("Ingresa un email válido."); return; }
     setLoggingIn(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
       redirectTo: `${window.location.origin}/portal`,
     });
     setLoggingIn(false);
@@ -345,7 +345,7 @@ export default function PortalPage() {
             <>
               <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 20 }}>Ingresa para administrar tu perfil.</p>
               <div className="space-y-3">
-                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle}
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} style={inputStyle}
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
                 <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Contraseña" type="password" style={inputStyle}
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
