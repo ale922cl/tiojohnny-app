@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { uploadPhoto } from "@/lib/photos";
+import { uploadPhoto, uploadVideo } from "@/lib/photos";
 import {
   COMUNAS, NATIONALITIES, EYE_COLORS, HAIR_COLORS, HEIGHTS, AGES, WEIGHTS,
   matchOption, optionsForValue,
@@ -73,12 +73,16 @@ export default function PortalPage() {
   // editor form
   const [form, setForm] = useState({});
   const [photos, setPhotos] = useState([]);
+  const [videos, setVideos] = useState([]);
   const [categories, setCategories] = useState([]);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
   const fileRef = useRef(null);
+  const [vidUploading, setVidUploading] = useState(false);
+  const [vidErr, setVidErr] = useState("");
+  const videoRef = useRef(null);
 
   // change password
   const [newPass, setNewPass] = useState("");
@@ -124,6 +128,7 @@ export default function PortalPage() {
         weight: matchOption(data.weight, WEIGHTS) || data.weight || "",
       });
       setPhotos(Array.isArray(data.photos) ? data.photos : []);
+      setVideos(Array.isArray(data.videos) ? data.videos : []);
       setCategories(Array.isArray(data.category) ? data.category : []);
     } else {
       setTalent(null);
@@ -187,13 +192,35 @@ export default function PortalPage() {
     const c = [...p]; [c[i], c[j]] = [c[j], c[i]]; return c;
   });
 
+  // ── videos ──
+  const addVideos = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length || !talent) return;
+    setVidErr(""); setVidUploading(true);
+    try {
+      const urls = [];
+      for (const f of files) urls.push(await uploadVideo(f, talent.id));
+      setVideos((prev) => [...prev, ...urls]);
+    } catch (e) {
+      setVidErr(e.message || "No se pudo subir el video.");
+    }
+    setVidUploading(false);
+    if (videoRef.current) videoRef.current.value = "";
+  };
+  const removeVideo = (i) => setVideos((v) => v.filter((_, idx) => idx !== i));
+  const moveVideo = (i, dir) => setVideos((v) => {
+    const j = i + dir;
+    if (j < 0 || j >= v.length) return v;
+    const c = [...v]; [c[i], c[j]] = [c[j], c[i]]; return c;
+  });
+
   const toggleCategory = (name) =>
     setCategories((c) => (c.includes(name) ? c.filter((x) => x !== name) : [...c, name]));
 
   const handleSave = async () => {
     if (!talent) return;
     setSaving(true); setSavedMsg("");
-    const payload = { ...form, category: categories, photos };
+    const payload = { ...form, category: categories, photos, videos };
     const { error } = await supabase.from("talents").update(payload).eq("id", talent.id);
     setSaving(false);
     setSavedMsg(error ? `Error al guardar: ${error.message}` : "¡Guardado! ✅");
@@ -281,6 +308,31 @@ export default function PortalPage() {
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
           {uploadErr && <p style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{uploadErr}</p>}
           <p style={{ color: "#6b6b90", fontSize: 11, marginTop: 8 }}>La primera foto es la principal. Usa ◀ ▶ para ordenar y ★ para elegir la principal.</p>
+        </section>
+
+        {/* Videos */}
+        <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, marginBottom: 12 }}>Videos</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            {videos.map((url, i) => (
+              <div key={url + i} style={{ position: "relative", borderRadius: 12, overflow: "hidden", aspectRatio: "3/4", border: "1px solid rgba(255,255,255,0.08)", background: "#000" }}>
+                <video src={url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <div style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>▶ VIDEO</div>
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", background: "rgba(0,0,0,0.55)", padding: "4px 6px" }}>
+                  <button onClick={() => moveVideo(i, -1)} disabled={i === 0} title="Mover" style={{ color: i === 0 ? "#555" : "#fff", fontSize: 14 }}>◀</button>
+                  <button onClick={() => moveVideo(i, 1)} disabled={i === videos.length - 1} title="Mover" style={{ color: i === videos.length - 1 ? "#555" : "#fff", fontSize: 14 }}>▶</button>
+                  <button onClick={() => removeVideo(i)} title="Eliminar" style={{ color: "#f87171", fontSize: 14 }}>✕</button>
+                </div>
+              </div>
+            ))}
+            <button onClick={() => videoRef.current?.click()} disabled={vidUploading}
+              style={{ aspectRatio: "3/4", borderRadius: 12, border: "1.5px dashed rgba(139,92,246,0.5)", color: ACCENT, fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              {vidUploading ? "Subiendo…" : <><span style={{ fontSize: 24 }}>＋</span>Agregar</>}
+            </button>
+          </div>
+          <input ref={videoRef} type="file" accept="video/mp4,video/quicktime,video/webm" multiple className="hidden" onChange={(e) => addVideos(e.target.files)} />
+          {vidErr && <p style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{vidErr}</p>}
+          <p style={{ color: "#6b6b90", fontSize: 11, marginTop: 8 }}>MP4, MOV o WebM · máximo 50 MB cada uno.</p>
         </section>
 
         {/* Details */}
