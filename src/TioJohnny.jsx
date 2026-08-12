@@ -1304,7 +1304,9 @@ export default function TioJohnny() {
       setFormNationality(talent.nationality || "");
       setFormPhotos(talent.photos || []);
       setFormInstagram(talent.instagram || "");
-      setFormEmail(talent.email || "");
+      setFormEmail("");
+      supabase.from("talent_private").select("email").eq("talent_id", talent.id).maybeSingle()
+        .then(({ data }) => setFormEmail(data?.email || ""));
       setFormSection(talent.section || "main");
     } else {
       setEditorId(null);
@@ -1437,17 +1439,23 @@ export default function TioJohnny() {
       nationality: formNationality,
       photos: formPhotos,
       instagram: formInstagram,
-      email: formEmail.trim().toLowerCase() || null,
       section: formSection,
     };
 
+    let savedId = editorId;
     if (editorId) {
       // Update existing
       await supabase.from("talents").update(profileData).eq("id", editorId);
     } else {
       // Insert new — place at the end
       const maxOrder = talents.length > 0 ? Math.max(...talents.map((t) => t.sort_order ?? 0)) : 0;
-      await supabase.from("talents").insert([{ ...profileData, sort_order: maxOrder + 1 }]);
+      const { data: inserted } = await supabase.from("talents").insert([{ ...profileData, sort_order: maxOrder + 1 }]).select("id").single();
+      savedId = inserted?.id;
+    }
+    // Email lives in the private table (never exposed via the public API)
+    const emailVal = formEmail.trim().toLowerCase();
+    if (savedId && emailVal) {
+      await supabase.from("talent_private").upsert({ talent_id: savedId, email: emailVal }, { onConflict: "talent_id" });
     }
 
     await fetchTalents();
@@ -1581,9 +1589,8 @@ export default function TioJohnny() {
     setRegErrors({});
     setRegSubmitting(true);
     const maxOrder = talents.length > 0 ? Math.max(...talents.map((t) => t.sort_order ?? 0)) : 0;
-    await supabase.from("talents").insert([{
+    const { data: newTalent } = await supabase.from("talents").insert([{
       name: regName.trim(),
-      email: regEmail.trim().toLowerCase(),
       phone: fmtPhone(regPhone),
       age: regAge.trim(),
       nationality: regNationality,
@@ -1602,7 +1609,10 @@ export default function TioJohnny() {
       status: "pendiente",
       sort_order: maxOrder + 1,
       archived: false,
-    }]);
+    }]).select("id").single();
+    if (newTalent?.id) {
+      await supabase.from("talent_private").insert([{ talent_id: newTalent.id, email: regEmail.trim().toLowerCase() }]);
+    }
     setRegSubmitting(false);
     setRegSuccess(true);
   };

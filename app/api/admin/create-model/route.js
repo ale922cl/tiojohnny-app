@@ -83,14 +83,15 @@ export async function POST(req) {
     return json({ error: "CREATE_FAILED", message: msg }, 400);
   }
 
-  // 5) Link the account to this profile
+  // 5) Link the account to this profile + store email privately
   const { error: linkErr } = await svc
-    .from("talents").update({ owner_id: created.user.id, email }).eq("id", talentId);
+    .from("talents").update({ owner_id: created.user.id }).eq("id", talentId);
   if (linkErr) {
     // Roll back the orphan auth user so a retry can succeed
     await svc.auth.admin.deleteUser(created.user.id).catch(() => {});
     return json({ error: "LINK_FAILED", message: linkErr.message }, 500);
   }
+  await svc.from("talent_private").upsert({ talent_id: talentId, email }, { onConflict: "talent_id" });
 
   return json({
     ok: true,
