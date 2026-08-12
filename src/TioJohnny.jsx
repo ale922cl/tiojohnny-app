@@ -1341,6 +1341,33 @@ export default function TioJohnny() {
   });
   const storyPrev = () => setStoryView((v) => (v && v.si > 0 ? { ...v, si: v.si - 1 } : v));
 
+  // Segmented story ring (one arc per story; unseen = purple, seen = grey)
+  const storyRingEl = (t, size = 64) => {
+    const list = getTalentStories(t.id);
+    const N = Math.max(1, list.length);
+    const R = 29, C = 2 * Math.PI * R;
+    const gap = N > 1 ? 10 : 0;
+    const seg = C / N - gap;
+    const imgInset = (size * 5) / 64;
+    const imgSize = (size * 54) / 64;
+    return (
+      <div style={{ position: "relative", width: size, height: size }}>
+        <svg width={size} height={size} viewBox="0 0 64 64" style={{ transform: "rotate(-90deg)" }}>
+          {Array.from({ length: N }).map((_, i) => {
+            const s = list[i];
+            const seen = s ? seenStories.has(s.id) : true;
+            return (
+              <circle key={i} cx="32" cy="32" r={R} fill="none"
+                stroke={seen ? "#3a3a52" : "#a855f7"} strokeWidth="3"
+                strokeDasharray={`${seg} ${C}`} strokeDashoffset={-(i * (C / N))} strokeLinecap="round" />
+            );
+          })}
+        </svg>
+        <img src={getMainPhoto(t)} alt={t.name} style={{ position: "absolute", top: imgInset, left: imgInset, width: imgSize, height: imgSize, borderRadius: "50%", objectFit: "cover" }} />
+      </div>
+    );
+  };
+
   // Auto-advance photo stories after 5s (videos advance when they end); mark seen
   useEffect(() => {
     if (!storyView) return;
@@ -5217,8 +5244,9 @@ export default function TioJohnny() {
             <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{t.specialty} &middot; {formatRate(t.rate)}</p>
           </div>
           {getTalentStories(t.id).length > 0 && (
-            <button onClick={() => openStory(t.id)} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold" style={{ background: "linear-gradient(135deg, #8B5CF6, #ec4899)", color: "#fff" }}>
-              ▶ Ver historias ({getTalentStories(t.id).length})
+            <button onClick={() => openStory(t.id)} className="mt-3 flex items-center gap-3">
+              {storyRingEl(t, 60)}
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#c4c4d8" }}>Ver historias</span>
             </button>
           )}
           <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: "#9898b0" }}>
@@ -5756,29 +5784,7 @@ export default function TioJohnny() {
             <div className="flex gap-3 overflow-x-auto px-3 pb-3 pt-1" style={{ scrollbarWidth: "none" }}>
               {storyTalents.map((t) => (
                 <button key={`story-${t.id}`} onClick={() => openStory(t.id)} className="flex flex-col items-center gap-1 flex-shrink-0" style={{ width: 68 }}>
-                  {(() => {
-                    const list = getTalentStories(t.id);
-                    const N = Math.max(1, list.length);
-                    const R = 29, C = 2 * Math.PI * R;
-                    const gap = N > 1 ? 10 : 0;
-                    const seg = C / N - gap;
-                    return (
-                      <div style={{ position: "relative", width: 64, height: 64 }}>
-                        <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: "rotate(-90deg)" }}>
-                          {Array.from({ length: N }).map((_, i) => {
-                            const s = list[i];
-                            const seen = s ? seenStories.has(s.id) : true;
-                            return (
-                              <circle key={i} cx="32" cy="32" r={R} fill="none"
-                                stroke={seen ? "#3a3a52" : "#a855f7"} strokeWidth="3"
-                                strokeDasharray={`${seg} ${C}`} strokeDashoffset={-(i * (C / N))} strokeLinecap="round" />
-                            );
-                          })}
-                        </svg>
-                        <img src={getMainPhoto(t)} alt={t.name} style={{ position: "absolute", top: 5, left: 5, width: 54, height: 54, borderRadius: "50%", objectFit: "cover" }} />
-                      </div>
-                    );
-                  })()}
+                  {storyRingEl(t, 64)}
                   <span className="truncate w-full text-center" style={{ fontSize: 11, color: "#c4c4d8" }}>{t.name}</span>
                 </button>
               ))}
