@@ -631,6 +631,7 @@ export default function TioJohnny() {
   const [formEmail, setFormEmail] = useState(""); // account email (not shown on profile)
   const [accessResult, setAccessResult] = useState(null); // { name, email, password, portalUrl }
   const [accessBusy, setAccessBusy] = useState(false);
+  const [accessCopied, setAccessCopied] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
@@ -1409,7 +1410,7 @@ export default function TioJohnny() {
       });
       const data = await res.json();
       if (!res.ok) { alert(data.message || "No se pudo crear el acceso."); }
-      else { setAccessResult(data); fetchTalents(); }
+      else { setAccessResult(data); setAccessCopied(false); fetchTalents(); }
     } catch (e) {
       alert("Error de conexión al crear el acceso.");
     }
@@ -3361,8 +3362,8 @@ export default function TioJohnny() {
                     const waPhone = formPhone ? fmtPhone(formPhone).replace(/[^0-9]/g, "") : "";
                     return (
                       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                        <button onClick={() => { navigator.clipboard?.writeText(msg); }}
-                          style={{ flex: 1, background: "rgba(139,92,246,0.15)", color: "#8B5CF6", border: "1px solid rgba(139,92,246,0.4)", borderRadius: 12, padding: "10px", fontSize: 13, fontWeight: 600 }}>Copiar mensaje</button>
+                        <button onClick={() => { navigator.clipboard?.writeText(msg); setAccessCopied(true); setTimeout(() => setAccessCopied(false), 2000); }}
+                          style={{ flex: 1, background: accessCopied ? "#22c55e" : "rgba(139,92,246,0.15)", color: accessCopied ? "#fff" : "#8B5CF6", border: `1px solid ${accessCopied ? "#22c55e" : "rgba(139,92,246,0.4)"}`, borderRadius: 12, padding: "10px", fontSize: 13, fontWeight: 600, transition: "all 0.15s ease" }}>{accessCopied ? "¡Copiado! ✓" : "Copiar mensaje"}</button>
                         {waPhone && <a href={`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer"
                           style={{ flex: 1, textAlign: "center", background: "#25D366", color: "#fff", borderRadius: 12, padding: "10px", fontSize: 13, fontWeight: 700 }}>WhatsApp</a>}
                       </div>
