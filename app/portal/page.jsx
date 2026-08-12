@@ -69,6 +69,9 @@ export default function PortalPage() {
   const [password, setPassword] = useState("");
   const [loginErr, setLoginErr] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
+  const [authMode, setAuthMode] = useState("login"); // "login" | "forgot"
+  const [resetSent, setResetSent] = useState(false);
+  const [forcePw, setForcePw] = useState(false); // must set a new password before continuing
 
   // editor form
   const [form, setForm] = useState({});
@@ -150,13 +153,18 @@ export default function PortalPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
-      if (s) loadTalent(s.user.id);
-      else setLoading(false);
+      if (s) {
+        if (s.user?.user_metadata?.must_change_password) setForcePw(true);
+        loadTalent(s.user.id);
+      } else setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (s) { setLoading(true); loadTalent(s.user.id); }
-      else { setTalent(null); setLoading(false); }
+      if (event === "PASSWORD_RECOVERY") setForcePw(true);
+      if (s) {
+        if (s.user?.user_metadata?.must_change_password) setForcePw(true);
+        setLoading(true); loadTalent(s.user.id);
+      } else { setTalent(null); setForcePw(false); setLoading(false); }
     });
     return () => subscription.unsubscribe();
   }, [loadTalent]);
@@ -175,9 +183,33 @@ export default function PortalPage() {
     setLoggingIn(false);
   };
 
+  const handleForgot = async () => {
+    setLoginErr("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setLoginErr("Ingresa un email válido."); return; }
+    setLoggingIn(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/portal`,
+    });
+    setLoggingIn(false);
+    if (error) setLoginErr(error.message);
+    else setResetSent(true);
+  };
+
+  // Set a new password (used for first-login and recovery). Clears the flag.
+  const handleForcedChange = async () => {
+    setPwMsg("");
+    if (newPass.length < 6) { setPwMsg("La contraseña debe tener al menos 6 caracteres."); return; }
+    if (newPass !== newPass2) { setPwMsg("Las contraseñas no coinciden."); return; }
+    setPwBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: newPass, data: { must_change_password: false } });
+    setPwBusy(false);
+    if (error) { setPwMsg("Error: " + error.message); return; }
+    setNewPass(""); setNewPass2(""); setForcePw(false);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setForm({}); setPhotos([]); setCategories([]);
+    setForm({}); setPhotos([]); setCategories([]); setForcePw(false);
   };
 
   // ── photos ──
@@ -287,17 +319,66 @@ export default function PortalPage() {
           <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>
             <span style={{ color: ACCENT }}>Tio</span>Johnny <span style={{ color: "#6b6b90", fontSize: 14 }}>· Portal</span>
           </h1>
-          <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 20 }}>Ingresa para administrar tu perfil.</p>
+          {authMode === "forgot" ? (
+            resetSent ? (
+              <div>
+                <p style={{ color: "#c4c4d8", fontSize: 14, marginTop: 12, marginBottom: 6 }}>📧 Te enviamos un correo con un enlace para restablecer tu contraseña.</p>
+                <p style={{ color: "#7878a0", fontSize: 12, marginBottom: 18 }}>Revisa tu bandeja (y spam). Abre el enlace desde este teléfono.</p>
+                <button onClick={() => { setAuthMode("login"); setResetSent(false); }} style={{ color: ACCENT, fontSize: 14 }}>← Volver a ingresar</button>
+              </div>
+            ) : (
+              <>
+                <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 20 }}>Ingresa tu email y te enviamos un enlace para crear una nueva contraseña.</p>
+                <div className="space-y-3">
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle}
+                    onKeyDown={(e) => e.key === "Enter" && handleForgot()} />
+                  {loginErr && <p style={{ color: "#f87171", fontSize: 13 }}>{loginErr}</p>}
+                  <button onClick={handleForgot} disabled={loggingIn}
+                    style={{ width: "100%", background: ACCENT, color: "#fff", fontWeight: 700, padding: "11px", borderRadius: 12, opacity: loggingIn ? 0.6 : 1 }}>
+                    {loggingIn ? "Enviando…" : "Enviar enlace"}
+                  </button>
+                  <button onClick={() => { setAuthMode("login"); setLoginErr(""); }} style={{ color: "#9898b0", fontSize: 13, width: "100%" }}>← Volver</button>
+                </div>
+              </>
+            )
+          ) : (
+            <>
+              <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 20 }}>Ingresa para administrar tu perfil.</p>
+              <div className="space-y-3">
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
+                <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Contraseña" type="password" style={inputStyle}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
+                {loginErr && <p style={{ color: "#f87171", fontSize: 13 }}>{loginErr}</p>}
+                <button onClick={handleLogin} disabled={loggingIn}
+                  style={{ width: "100%", background: ACCENT, color: "#fff", fontWeight: 700, padding: "11px", borderRadius: 12, opacity: loggingIn ? 0.6 : 1 }}>
+                  {loggingIn ? "Ingresando…" : "Ingresar"}
+                </button>
+                <button onClick={() => { setAuthMode("forgot"); setLoginErr(""); }} style={{ color: "#9898b0", fontSize: 13, width: "100%" }}>¿Olvidaste tu contraseña?</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (forcePw) {
+    return (
+      <div style={{ minHeight: "100vh", background: BG, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ width: "100%", maxWidth: 380, background: CARD, borderRadius: 20, padding: 28 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Crea tu contraseña 🔒</h1>
+          <p style={{ color: "#9898b0", fontSize: 13, marginBottom: 20 }}>Por seguridad, elige una contraseña nueva para continuar.</p>
           <div className="space-y-3">
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
-            <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Contraseña" type="password" style={inputStyle}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
-            {loginErr && <p style={{ color: "#f87171", fontSize: 13 }}>{loginErr}</p>}
-            <button onClick={handleLogin} disabled={loggingIn}
-              style={{ width: "100%", background: ACCENT, color: "#fff", fontWeight: 700, padding: "11px", borderRadius: 12, opacity: loggingIn ? 0.6 : 1 }}>
-              {loggingIn ? "Ingresando…" : "Ingresar"}
+            <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Nueva contraseña (mín. 6)" style={inputStyle} />
+            <input type="password" value={newPass2} onChange={(e) => setNewPass2(e.target.value)} placeholder="Repite la contraseña" style={inputStyle}
+              onKeyDown={(e) => e.key === "Enter" && handleForcedChange()} />
+            {pwMsg && <p style={{ fontSize: 13, color: pwMsg.startsWith("Error") || pwMsg.includes("no coinciden") || pwMsg.includes("al menos") ? "#f87171" : "#22c55e" }}>{pwMsg}</p>}
+            <button onClick={handleForcedChange} disabled={pwBusy || !newPass}
+              style={{ width: "100%", background: ACCENT, color: "#fff", fontWeight: 700, padding: "11px", borderRadius: 12, opacity: pwBusy || !newPass ? 0.6 : 1 }}>
+              {pwBusy ? "Guardando…" : "Guardar y continuar"}
             </button>
+            <button onClick={handleLogout} style={{ color: "#9898b0", fontSize: 13, width: "100%" }}>Cerrar sesión</button>
           </div>
         </div>
       </div>

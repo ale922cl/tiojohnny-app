@@ -75,6 +75,7 @@ export async function POST(req) {
   const password = genPassword();
   const { data: created, error: cErr } = await svc.auth.admin.createUser({
     email, password, email_confirm: true,
+    user_metadata: { must_change_password: true },
   });
   if (cErr || !created?.user) {
     const msg = /already/i.test(cErr?.message || "")
