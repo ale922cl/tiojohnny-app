@@ -1602,7 +1602,7 @@ export default function TioJohnny() {
       const res = await fetch("/api/admin/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${s?.access_token}` },
-        body: JSON.stringify({ talentId: editorId }),
+        body: JSON.stringify({ talentId: editorId, email: formEmail.trim().toLowerCase() }),
       });
       const data = await res.json();
       if (!res.ok) alert(data.message || "No se pudo restablecer la contraseña.");

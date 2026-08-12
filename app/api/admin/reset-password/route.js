@@ -31,6 +31,8 @@ function genPassword() {
   return `Tio-${s}`;
 }
 
+const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
 export async function POST(req) {
   if (!isAllowedOrigin(req)) return json({ error: "FORBIDDEN" }, 403);
 
@@ -62,22 +64,35 @@ export async function POST(req) {
   if (!talent) return json({ error: "TALENT_NOT_FOUND" }, 404);
   if (!talent.owner_id) return json({ error: "NO_ACCOUNT", message: "Este perfil aún no tiene acceso al portal." }, 409);
 
-  // Reset the password + force a change on next login
+  // Resolve the login email to sync onto the account:
+  // admin's provided email → stored private email → current auth email.
+  let email = String(body?.email || "").trim().toLowerCase();
+  if (!emailOk(email)) {
+    const { data: tp } = await svc.from("talent_private").select("email").eq("talent_id", talentId).maybeSingle();
+    email = (tp?.email || "").trim().toLowerCase();
+  }
+  if (!emailOk(email)) {
+    const { data: au } = await svc.auth.admin.getUserById(talent.owner_id);
+    email = (au?.user?.email || "").trim().toLowerCase();
+  }
+  if (!emailOk(email)) return json({ error: "NO_EMAIL", message: "No hay un email válido para esta cuenta. Agrégalo y guarda el perfil." }, 400);
+
+  // Reset password + SYNC the login email + force change on next login
   const password = genPassword();
   const { error: upErr } = await svc.auth.admin.updateUserById(talent.owner_id, {
+    email,
+    email_confirm: true,
     password,
     user_metadata: { must_change_password: true },
   });
-  if (upErr) return json({ error: "RESET_FAILED", message: upErr.message }, 500);
-
-  // Email (for the WhatsApp message) — from the private table, fallback to auth
-  let email = "";
-  const { data: tp } = await svc.from("talent_private").select("email").eq("talent_id", talentId).maybeSingle();
-  email = tp?.email || "";
-  if (!email) {
-    const { data: au } = await svc.auth.admin.getUserById(talent.owner_id);
-    email = au?.user?.email || "";
+  if (upErr) {
+    const msg = /already|registered|exists/i.test(upErr.message || "")
+      ? "Ese email ya está en uso por otra cuenta."
+      : upErr.message;
+    return json({ error: "RESET_FAILED", message: msg }, 500);
   }
+  // Keep the private table in sync
+  await svc.from("talent_private").upsert({ talent_id: talentId, email }, { onConflict: "talent_id" });
 
   return json({ ok: true, reset: true, name: talent.name, email, password, portalUrl: "https://tiojohnny.cl/portal" }, 200);
 }
