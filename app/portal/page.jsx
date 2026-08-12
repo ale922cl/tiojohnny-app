@@ -192,15 +192,20 @@ export default function PortalPage() {
     const c = [...p]; [c[i], c[j]] = [c[j], c[i]]; return c;
   });
 
-  // ── videos ──
+  // ── videos (max 3 per profile) ──
+  const MAX_VIDEOS = 3;
   const addVideos = async (fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length || !talent) return;
+    const remaining = MAX_VIDEOS - videos.length;
+    if (remaining <= 0) { setVidErr(`Máximo ${MAX_VIDEOS} videos por perfil.`); return; }
+    const toUpload = files.slice(0, remaining);
     setVidErr(""); setVidUploading(true);
     try {
       const urls = [];
-      for (const f of files) urls.push(await uploadVideo(f, talent.id));
+      for (const f of toUpload) urls.push(await uploadVideo(f, talent.id));
       setVideos((prev) => [...prev, ...urls]);
+      if (files.length > remaining) setVidErr(`Solo se agregaron ${remaining} — el máximo es ${MAX_VIDEOS} videos.`);
     } catch (e) {
       setVidErr(e.message || "No se pudo subir el video.");
     }
@@ -325,14 +330,16 @@ export default function PortalPage() {
                 </div>
               </div>
             ))}
-            <button onClick={() => videoRef.current?.click()} disabled={vidUploading}
-              style={{ aspectRatio: "3/4", borderRadius: 12, border: "1.5px dashed rgba(139,92,246,0.5)", color: ACCENT, fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
-              {vidUploading ? "Subiendo…" : <><span style={{ fontSize: 24 }}>＋</span>Agregar</>}
-            </button>
+            {videos.length < MAX_VIDEOS && (
+              <button onClick={() => videoRef.current?.click()} disabled={vidUploading}
+                style={{ aspectRatio: "3/4", borderRadius: 12, border: "1.5px dashed rgba(139,92,246,0.5)", color: ACCENT, fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                {vidUploading ? "Subiendo…" : <><span style={{ fontSize: 24 }}>＋</span>Agregar</>}
+              </button>
+            )}
           </div>
           <input ref={videoRef} type="file" accept="video/mp4,video/quicktime,video/webm" multiple className="hidden" onChange={(e) => addVideos(e.target.files)} />
           {vidErr && <p style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{vidErr}</p>}
-          <p style={{ color: "#6b6b90", fontSize: 11, marginTop: 8 }}>MP4, MOV o WebM · máximo 50 MB cada uno.</p>
+          <p style={{ color: "#6b6b90", fontSize: 11, marginTop: 8 }}>Máximo {MAX_VIDEOS} videos · MP4, MOV o WebM · hasta 50 MB cada uno.</p>
         </section>
 
         {/* Details */}
