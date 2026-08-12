@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { uploadPhoto, uploadVideo } from "@/lib/photos";
+import { uploadPhoto, uploadVideo, uploadStory } from "@/lib/photos";
 import {
   COMUNAS, NATIONALITIES, EYE_COLORS, HAIR_COLORS, HEIGHTS, AGES, WEIGHTS,
   matchOption, optionsForValue,
@@ -83,6 +83,10 @@ export default function PortalPage() {
   const [vidUploading, setVidUploading] = useState(false);
   const [vidErr, setVidErr] = useState("");
   const videoRef = useRef(null);
+  const [stories, setStories] = useState([]);
+  const [storyBusy, setStoryBusy] = useState(false);
+  const [storyErr, setStoryErr] = useState("");
+  const storyRef = useRef(null);
 
   // change password
   const [newPass, setNewPass] = useState("");
@@ -104,6 +108,12 @@ export default function PortalPage() {
     setPwMsg("¡Contraseña actualizada! ✅");
     setTimeout(() => setPwMsg(""), 3000);
   };
+
+  const refreshStories = useCallback(async (tid) => {
+    // RLS returns only non-expired stories (that's what makes them expire).
+    const { data } = await supabase.from("stories").select("*").eq("talent_id", tid).order("created_at", { ascending: false });
+    setStories(data || []);
+  }, []);
 
   const loadTalent = useCallback(async (userId) => {
     const { data } = await supabase.from("talents").select("*").eq("owner_id", userId).limit(1).maybeSingle();
@@ -130,11 +140,12 @@ export default function PortalPage() {
       setPhotos(Array.isArray(data.photos) ? data.photos : []);
       setVideos(Array.isArray(data.videos) ? data.videos : []);
       setCategories(Array.isArray(data.category) ? data.category : []);
+      refreshStories(data.id);
     } else {
       setTalent(null);
     }
     setLoading(false);
-  }, []);
+  }, [refreshStories]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -219,6 +230,34 @@ export default function PortalPage() {
     const c = [...v]; [c[i], c[j]] = [c[j], c[i]]; return c;
   });
 
+  // ── stories (max 5 per 24h, expire after 24h — saved immediately) ──
+  const MAX_STORIES = 5;
+  const addStories = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length || !talent) return;
+    const remaining = MAX_STORIES - stories.length;
+    if (remaining <= 0) { setStoryErr(`Máximo ${MAX_STORIES} historias cada 24 horas.`); return; }
+    setStoryErr(""); setStoryBusy(true);
+    try {
+      for (const f of files.slice(0, remaining)) {
+        const { url, media_type } = await uploadStory(f, talent.id);
+        const { error } = await supabase.from("stories").insert([{ talent_id: talent.id, media_url: url, media_type }]);
+        if (error) throw new Error(error.message.includes("STORY_LIMIT") ? `Máximo ${MAX_STORIES} historias cada 24 horas.` : error.message);
+      }
+      if (files.length > remaining) setStoryErr(`Solo se agregaron ${remaining} — el máximo es ${MAX_STORIES} cada 24 h.`);
+      await refreshStories(talent.id);
+    } catch (e) {
+      setStoryErr(e.message || "No se pudo subir la historia.");
+    }
+    setStoryBusy(false);
+    if (storyRef.current) storyRef.current.value = "";
+  };
+  const deleteStory = async (id) => {
+    await supabase.from("stories").delete().eq("id", id);
+    if (talent) refreshStories(talent.id);
+  };
+  const hoursLeft = (expires) => Math.max(0, Math.round((new Date(expires).getTime() - Date.now()) / 3600000));
+
   const toggleCategory = (name) =>
     setCategories((c) => (c.includes(name) ? c.filter((x) => x !== name) : [...c, name]));
 
@@ -287,6 +326,35 @@ export default function PortalPage() {
       </header>
 
       <main style={{ maxWidth: 640, margin: "0 auto", padding: "18px 16px 120px" }}>
+        {/* Stories */}
+        <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, marginBottom: 12 }}>
+            Historias <span style={{ fontSize: 11, fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#6b6b90" }}>· duran 24 h</span>
+          </h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            {stories.map((s) => (
+              <div key={s.id} style={{ position: "relative", borderRadius: 12, overflow: "hidden", aspectRatio: "3/4", border: "1px solid rgba(255,255,255,0.08)", background: "#000" }}>
+                {s.media_type === "video"
+                  ? <video src={s.media_url} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <img src={s.media_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                <span style={{ position: "absolute", top: 4, left: 4, background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>
+                  {s.media_type === "video" ? "▶ " : ""}{hoursLeft(s.expires_at)}h
+                </span>
+                <button onClick={() => deleteStory(s.id)} title="Eliminar" style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#f87171", fontSize: 13, width: 22, height: 22, borderRadius: "50%" }}>✕</button>
+              </div>
+            ))}
+            {stories.length < MAX_STORIES && (
+              <button onClick={() => storyRef.current?.click()} disabled={storyBusy}
+                style={{ aspectRatio: "3/4", borderRadius: 12, border: "1.5px dashed rgba(139,92,246,0.5)", color: ACCENT, fontSize: 13, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                {storyBusy ? "Subiendo…" : <><span style={{ fontSize: 24 }}>＋</span>Agregar</>}
+              </button>
+            )}
+          </div>
+          <input ref={storyRef} type="file" accept="image/*,video/mp4,video/quicktime,video/webm" multiple className="hidden" onChange={(e) => addStories(e.target.files)} />
+          {storyErr && <p style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>{storyErr}</p>}
+          <p style={{ color: "#6b6b90", fontSize: 11, marginTop: 8 }}>Foto o video · desaparecen a las 24 h · máximo {MAX_STORIES} cada 24 h.</p>
+        </section>
+
         {/* Photos */}
         <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
           <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, marginBottom: 12 }}>Fotos</h2>
