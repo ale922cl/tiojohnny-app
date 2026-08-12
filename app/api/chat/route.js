@@ -1,8 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+export const runtime = "nodejs";
 export const maxDuration = 30;
 
-// Simple in-memory rate limiter: 20 requests per IP per hour
+// Simple in-memory rate limiter: 20 requests per IP per hour.
+// (Per serverless instance — a coarse backstop, not a hard guarantee.)
 const rateLimitMap = new Map();
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -11,7 +13,6 @@ function isRateLimited(ip) {
   const now = Date.now();
   const entry = rateLimitMap.get(ip) || { count: 0, windowStart: now };
   if (now - entry.windowStart > RATE_WINDOW_MS) {
-    // Reset window
     rateLimitMap.set(ip, { count: 1, windowStart: now });
     return false;
   }
@@ -19,6 +20,20 @@ function isRateLimited(ip) {
   entry.count++;
   rateLimitMap.set(ip, entry);
   return false;
+}
+
+// Only allow calls coming from our own site (blocks casual credit-burning
+// scripts). Browsers always send Origin on same-origin POST fetches.
+const ALLOWED_HOST_SUFFIXES = ["tiojohnny.cl", ".vercel.app", "localhost"];
+function isAllowedOrigin(req) {
+  const origin = req.headers.get("origin") || req.headers.get("referer") || "";
+  if (!origin) return false; // no browser origin → reject (curl, bots)
+  try {
+    const host = new URL(origin).hostname;
+    return ALLOWED_HOST_SUFFIXES.some((s) => host === s || host.endsWith(s));
+  } catch {
+    return false;
+  }
 }
 
 const SYSTEM_PROMPT = `Eres el asistente de TioJohnny.cl — el directorio de modelos y modelos para eventos en Chile. Eres pícaro/a, directo/a, divertido/a. Hablas como chileno/a de verdad: tuteas siempre, usas expresiones como "bacán", "la raja", "al tiro", "po". Eres cálido/a pero también un poco coqueto/a — haces que el cliente sienta que su evento va a ser legendario.
@@ -68,25 +83,43 @@ Reglas de estilo:
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+function jsonResponse(obj, status) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function POST(req) {
+  if (!isAllowedOrigin(req)) {
+    return jsonResponse({ error: "FORBIDDEN" }, 403);
   }
 
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (isRateLimited(ip)) {
-    return res.status(429).json({
-      error: "RATE_LIMITED",
-      content: "Has enviado demasiados mensajes. Por favor espera un momento antes de continuar. 🙏",
-    });
+    return jsonResponse(
+      {
+        error: "RATE_LIMITED",
+        content:
+          "Has enviado demasiados mensajes. Por favor espera un momento antes de continuar. 🙏",
+      },
+      429
+    );
   }
 
-  const { messages } = req.body || {};
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ error: "Invalid JSON" }, 400);
+  }
+  const { messages } = body || {};
   if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: "Invalid messages" });
+    return jsonResponse({ error: "Invalid messages" }, 400);
   }
 
-  // Cap message length to avoid token abuse
+  // Cap message count + length to avoid token abuse
   const sanitizedMessages = messages.slice(-20).map((m) => ({
     role: m.role,
     content: String(m.content || "").slice(0, 1000),
@@ -94,53 +127,75 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return res.status(503).json({
-      error: "API_KEY_MISSING",
-      content: "El agente aún no está configurado. Por favor intenta más tarde. 🙏",
-    });
+    return jsonResponse(
+      {
+        error: "API_KEY_MISSING",
+        content:
+          "El agente aún no está configurado. Por favor intenta más tarde. 🙏",
+      },
+      503
+    );
   }
 
   const client = new Anthropic({ apiKey });
+  const encoder = new TextEncoder();
 
-  // Set up SSE headers for streaming
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
 
-  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+      const MAX = 5;
+      for (let attempt = 0; attempt < MAX; attempt++) {
+        try {
+          const anthropicStream = client.messages.stream({
+            model: "claude-haiku-4-5",
+            max_tokens: 700,
+            system: [
+              {
+                type: "text",
+                text: SYSTEM_PROMPT,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
+            messages: sanitizedMessages,
+          });
 
-  // Try up to 5 times on 529 overloaded — notify client on each retry
-  const MAX = 5;
-  for (let attempt = 0; attempt < MAX; attempt++) {
-    try {
-      const stream = client.messages.stream({
-        model: "claude-haiku-4-5",
-        max_tokens: 700,
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        messages: sanitizedMessages,
-      });
+          for await (const chunk of anthropicStream) {
+            if (
+              chunk.type === "content_block_delta" &&
+              chunk.delta.type === "text_delta"
+            ) {
+              send({ text: chunk.delta.text });
+            }
+          }
 
-      for await (const chunk of stream) {
-        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-          send({ text: chunk.delta.text });
+          send({ done: true });
+          controller.close();
+          return;
+        } catch (err) {
+          const isOverloaded =
+            err?.status === 529 || err?.error?.error?.type === "overloaded_error";
+          if (isOverloaded && attempt < MAX - 1) {
+            send({ retrying: attempt + 1 });
+            await sleep(600 + attempt * 400); // 600ms, 1000ms, 1400ms, 1800ms
+            continue;
+          }
+          console.error("Anthropic error:", err);
+          send({ error: true });
+          controller.close();
+          return;
         }
       }
+    },
+  });
 
-      send({ done: true });
-      res.end();
-      return;
-    } catch (err) {
-      const isOverloaded = err?.status === 529 || err?.error?.error?.type === "overloaded_error";
-      if (isOverloaded && attempt < MAX - 1) {
-        send({ retrying: attempt + 1 }); // tell client we're retrying
-        await sleep(600 + attempt * 400); // 600ms, 1000ms, 1400ms, 1800ms
-        continue;
-      }
-      console.error("Anthropic error:", err);
-      send({ error: true });
-      res.end();
-      return;
-    }
-  }
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
