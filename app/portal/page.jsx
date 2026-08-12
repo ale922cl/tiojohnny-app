@@ -354,7 +354,7 @@ export default function PortalPage() {
                   style={{ width: "100%", background: ACCENT, color: "#fff", fontWeight: 700, padding: "11px", borderRadius: 12, opacity: loggingIn ? 0.6 : 1 }}>
                   {loggingIn ? "Ingresando…" : "Ingresar"}
                 </button>
-                <button onClick={() => { setAuthMode("forgot"); setLoginErr(""); }} style={{ color: "#9898b0", fontSize: 13, width: "100%" }}>¿Olvidaste tu contraseña?</button>
+                <p style={{ color: "#6b6b90", fontSize: 12, textAlign: "center", marginTop: 4 }}>¿Olvidaste tu contraseña? Escríbele al Tío Johnny 💜</p>
               </div>
             </>
           )}
