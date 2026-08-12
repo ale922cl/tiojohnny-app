@@ -540,6 +540,12 @@ export default function TioJohnny() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
+  const [myRole, setMyRole] = useState(null); // "admin" | "analytics" | "model" | null
+  // Resolve a logged-in user's role from the admins table (models have no row).
+  const resolveRole = async (userId) => {
+    const { data } = await supabase.from("admins").select("role").eq("user_id", userId).maybeSingle();
+    return data?.role || "model";
+  };
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryEmoji, setNewCategoryEmoji] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState("#8B5CF6");
@@ -768,18 +774,16 @@ export default function TioJohnny() {
     setTimeout(() => setCountersShown(false), 4000);
   }, [talents]);
 
-  // ─── Fetch pending + auto-load analytics for analytics-only users ──
+  // ─── Fetch pending + auto-load analytics based on resolved role ──
   useEffect(() => {
-    if (!session) return;
-    const role = session.user?.user_metadata?.role;
-    const email = session.user?.email;
-    if (role === "analytics" || email === "aceitunoafarica@hotmail.com") {
+    if (!session || !myRole) return;
+    if (myRole === "analytics") {
       setAdminTab("analytics");
       fetchAnalytics();
-    } else {
+    } else if (myRole === "admin") {
       fetchPending();
     }
-  }, [session]);
+  }, [session, myRole]);
 
   // ─── Fetch trending data ──────────────────────────────────────────
   const fetchTrending = useCallback(() => {
@@ -867,10 +871,12 @@ export default function TioJohnny() {
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
+      if (s) resolveRole(s.user.id).then(setMyRole); else setMyRole(null);
     });
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
+      if (s) resolveRole(s.user.id).then(setMyRole); else setMyRole(null);
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1256,12 +1262,17 @@ export default function TioJohnny() {
         : error.message);
     } else {
       setSession(data.session);
-      setView("admin");
-      const role = data.session?.user?.user_metadata?.role;
-      const email = data.session?.user?.email;
-      if (role === "analytics" || email === "aceitunoafarica@hotmail.com") setAdminTab("analytics");
       setLoginEmail("");
       setLoginPassword("");
+      const role = await resolveRole(data.session.user.id);
+      setMyRole(role);
+      if (role === "admin" || role === "analytics") {
+        if (role === "analytics") setAdminTab("analytics");
+        setView("admin");
+      } else {
+        // A talent (model) logged in — send her to her portal.
+        window.location.assign("/portal");
+      }
     }
   };
 
@@ -3037,8 +3048,8 @@ export default function TioJohnny() {
             <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center" style={{ background: "#8B5CF6" }}>
               <Lock size={28} color="#fff" />
             </div>
-            <h2 className="text-xl font-bold text-white">Admin Panel</h2>
-            <p className="text-xs mt-1" style={{ color: "#7878a0" }}>Solo acceso autorizado</p>
+            <h2 className="text-xl font-bold text-white">Iniciar sesión</h2>
+            <p className="text-xs mt-1" style={{ color: "#7878a0" }}>Administradores y modelos</p>
           </div>
           <div className="space-y-4">
             <div>
@@ -5199,7 +5210,7 @@ export default function TioJohnny() {
               <button onClick={() => setSearchOpen(true)} className="p-2">
                 <Search size={20} color="#8B5CF6" />
               </button>
-              <button onClick={() => session ? setView("admin") : setView("login")} className="p-2">
+              <button onClick={() => { if (!session) { setView("login"); } else if (myRole === "admin" || myRole === "analytics") { setView("admin"); } else { window.location.assign("/portal"); } }} className="p-2">
                 <Settings size={18} color="#4a4a6a" />
               </button>
             </div>
