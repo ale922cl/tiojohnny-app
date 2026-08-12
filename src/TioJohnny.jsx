@@ -587,6 +587,8 @@ export default function TioJohnny() {
   const [filterHeightMax, setFilterHeightMax] = useState("");     // dropdown
   const filterDropRef = useRef(null);
   const [selectedTalent, setSelectedTalent] = useState(null);
+  const [stories, setStories] = useState([]);            // active (non-expired) stories
+  const [storyView, setStoryView] = useState(null);      // { talentId, si } or null
   const [spotlightTalent, setSpotlightTalent] = useState(null);
   const [countersShown, setCountersShown] = useState(false);
   const [counterVals, setCounterVals] = useState({ models: 0, cats: 0, comunas: 0 });
@@ -868,6 +870,7 @@ export default function TioJohnny() {
     fetchTalents();
     fetchCategories();
     fetchAds();
+    fetchStories();
     trackEvent("page_view", null, null, JSON.stringify({ device: getDeviceType() }));
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -943,6 +946,15 @@ export default function TioJohnny() {
     if (data) setAds(data);
   };
   const activeAds = ads.filter((a) => a.active);
+
+  const fetchStories = async () => {
+    const { data } = await supabase
+      .from("stories")
+      .select("*")
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: true });
+    if (data) setStories(data);
+  };
 
   // Upload an ad image (no watermark) and create the ad row
   const handleAddAd = async (file) => {
@@ -1234,6 +1246,32 @@ export default function TioJohnny() {
     }
     return true;
   });
+
+  // ── Stories: which talents (current section, visible) have active stories ──
+  const getTalentStories = (talentId) => stories.filter((s) => s.talent_id === talentId);
+  const storyTalents = [...new Set(stories.map((s) => s.talent_id))]
+    .map((id) => talents.find((t) => t.id === id))
+    .filter((t) => t && !t.archived && t.status !== "pendiente" && (t.section || "main") === siteSection);
+
+  const openStory = (talentId) => { trackEvent("story_view", talentId); setStoryView({ talentId, si: 0 }); };
+  const storyAdvance = () => setStoryView((v) => {
+    if (!v) return v;
+    const list = getTalentStories(v.talentId);
+    return v.si + 1 < list.length ? { ...v, si: v.si + 1 } : null;
+  });
+  const storyPrev = () => setStoryView((v) => (v && v.si > 0 ? { ...v, si: v.si - 1 } : v));
+
+  // Auto-advance photo stories after 5s (videos advance when they end)
+  useEffect(() => {
+    if (!storyView) return;
+    const list = getTalentStories(storyView.talentId);
+    const cur = list[storyView.si];
+    if (!cur) { setStoryView(null); return; }
+    if (cur.media_type === "photo") {
+      const t = setTimeout(() => storyAdvance(), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [storyView]);
 
   // Fire one ad impression per ad per session for ads actually shown in the grid
   useEffect(() => {
@@ -4944,6 +4982,11 @@ export default function TioJohnny() {
             <h2 className="text-2xl font-bold text-white">{t.name}</h2>
             <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{t.specialty} &middot; {formatRate(t.rate)}</p>
           </div>
+          {getTalentStories(t.id).length > 0 && (
+            <button onClick={() => openStory(t.id)} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold" style={{ background: "linear-gradient(135deg, #8B5CF6, #ec4899)", color: "#fff" }}>
+              ▶ Ver historias ({getTalentStories(t.id).length})
+            </button>
+          )}
           <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: "#9898b0" }}>
             <span className="flex items-center gap-1"><MapPin size={12} /> {t.location}</span>
             {t.instagram && (
@@ -5052,6 +5095,37 @@ export default function TioJohnny() {
       </div>
 
       {/* ── Lightbox: full-screen photo viewer ── */}
+      {storyView && (() => {
+        const st = talents.find((x) => x.id === storyView.talentId);
+        const list = getTalentStories(storyView.talentId);
+        const cur = list[storyView.si];
+        if (!st || !cur) return null;
+        const ago = Math.max(0, Math.round((Date.now() - new Date(cur.created_at).getTime()) / 3600000));
+        return (
+          <div className="fixed inset-0 z-[110] flex flex-col" style={{ background: "#000" }}>
+            <div className="flex gap-1 px-3 pt-3" style={{ zIndex: 5 }}>
+              {list.map((_, i) => (
+                <div key={i} style={{ flex: 1, height: 3, borderRadius: 3, background: i <= storyView.si ? "#fff" : "rgba(255,255,255,0.3)" }} />
+              ))}
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2" style={{ zIndex: 5 }}>
+              <img src={getMainPhoto(st)} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+              <span style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{st.name}</span>
+              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>hace {ago}h</span>
+              <button onClick={() => setStoryView(null)} className="ml-auto p-1"><X size={24} color="#fff" /></button>
+            </div>
+            <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+              {cur.media_type === "video"
+                ? <video key={cur.id} src={cur.media_url} autoPlay muted playsInline onEnded={storyAdvance} style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                : <img key={cur.id} src={cur.media_url} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />}
+              <button onClick={storyPrev} aria-label="Anterior" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "33%", background: "transparent" }} />
+              <button onClick={storyAdvance} aria-label="Siguiente" style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "67%", background: "transparent" }} />
+            </div>
+            <button onClick={() => { setStoryView(null); openProfile(st); }} className="mx-auto mb-6 mt-3 px-5 py-2 rounded-full text-sm font-semibold" style={{ background: "#8B5CF6", color: "#fff", zIndex: 5 }}>Ver perfil</button>
+          </div>
+        );
+      })()}
+
       {lightboxIndex !== null && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden"
@@ -5475,6 +5549,20 @@ export default function TioJohnny() {
       {/* ═══ GRID VIEW ═══ */}
       {viewMode === "grid" && (
         <>
+          {storyTalents.length > 0 && (
+            <div className="flex gap-3 overflow-x-auto px-3 pb-3 pt-1" style={{ scrollbarWidth: "none" }}>
+              {storyTalents.map((t) => (
+                <button key={`story-${t.id}`} onClick={() => openStory(t.id)} className="flex flex-col items-center gap-1 flex-shrink-0" style={{ width: 68 }}>
+                  <div style={{ padding: 2, borderRadius: "50%", background: "linear-gradient(135deg, #8B5CF6, #ec4899)" }}>
+                    <div style={{ padding: 2, borderRadius: "50%", background: "#12122a" }}>
+                      <img src={getMainPhoto(t)} alt={t.name} style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }} />
+                    </div>
+                  </div>
+                  <span className="truncate w-full text-center" style={{ fontSize: 11, color: "#c4c4d8" }}>{t.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 px-3 pb-8 ${gridMorphing ? "grid-morph-out" : ""}`}>
             {filtered.flatMap((t, idx) => {
               const isFav = favorites.includes(t.id);
