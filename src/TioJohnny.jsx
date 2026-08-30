@@ -5743,13 +5743,6 @@ export default function TioJohnny() {
           >
             🟢 Disponibles
           </button>
-          <button
-            onClick={() => { const next = !castMode; setCastMode(next); setCastSelected(new Set()); if (next) { setCastToast(true); setTimeout(() => setCastToast(false), 3500); } }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
-            style={{ background: castMode ? "#8B5CF6" : "#1e1e3a", color: castMode ? "#fff" : "#7878a0", border: castMode ? "none" : "1px solid #2a2a4a" }}
-          >
-            <Users size={11} /> Cast
-          </button>
           {/* Currency dropdown */}
           <div className="relative">
             <button

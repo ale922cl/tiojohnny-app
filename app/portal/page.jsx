@@ -422,7 +422,7 @@ export default function PortalPage() {
         {/* Profile completeness */}
         {(() => {
           const checklist = [
-            { ok: photos.length >= 3, label: "3+ fotos" },
+            { ok: photos.length >= 6, label: "6+ fotos" },
             { ok: videos.length >= 1, label: "1 video" },
             { ok: stories.length >= 1, label: "Una historia activa" },
             { ok: !!(form.about && form.about.trim()), label: "Tu descripción" },
