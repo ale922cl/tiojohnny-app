@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { uploadPhoto, uploadVideo, uploadStory } from "@/lib/photos";
+import { logActivity } from "@/lib/activity";
 import {
   COMUNAS, NATIONALITIES, EYE_COLORS, HAIR_COLORS, HEIGHTS, AGES, WEIGHTS,
   matchOption, optionsForValue,
@@ -219,7 +220,7 @@ export default function PortalPage() {
     setUploadErr(""); setUploading(true);
     try {
       const urls = [];
-      for (const f of files) urls.push(await uploadPhoto(f, talent.id));
+      for (const f of files) { urls.push(await uploadPhoto(f, talent.id)); logActivity(supabase, talent.id, "photo"); }
       setPhotos((prev) => [...prev, ...urls]);
     } catch (e) {
       setUploadErr(e.message || "No se pudo subir la imagen.");
@@ -246,7 +247,7 @@ export default function PortalPage() {
     setVidErr(""); setVidUploading(true);
     try {
       const urls = [];
-      for (const f of toUpload) urls.push(await uploadVideo(f, talent.id));
+      for (const f of toUpload) { urls.push(await uploadVideo(f, talent.id)); logActivity(supabase, talent.id, "video"); }
       setVideos((prev) => [...prev, ...urls]);
       if (files.length > remaining) setVidErr(`Solo se agregaron ${remaining} — el máximo es ${MAX_VIDEOS} videos.`);
     } catch (e) {
@@ -275,6 +276,7 @@ export default function PortalPage() {
         const { url, media_type } = await uploadStory(f, talent.id);
         const { error } = await supabase.from("stories").insert([{ talent_id: talent.id, media_url: url, media_type }]);
         if (error) throw new Error(error.message.includes("STORY_LIMIT") ? `Máximo ${MAX_STORIES} historias cada 24 horas.` : error.message);
+        logActivity(supabase, talent.id, "story");
       }
       if (files.length > remaining) setStoryErr(`Solo se agregaron ${remaining} — el máximo es ${MAX_STORIES} cada 24 h.`);
       await refreshStories(talent.id);
@@ -407,6 +409,42 @@ export default function PortalPage() {
       </header>
 
       <main style={{ maxWidth: 640, margin: "0 auto", padding: "18px 16px 120px" }}>
+        {/* Profile completeness */}
+        {(() => {
+          const checklist = [
+            { ok: photos.length >= 3, label: "3+ fotos" },
+            { ok: videos.length >= 1, label: "1 video" },
+            { ok: stories.length >= 1, label: "Una historia activa" },
+            { ok: !!(form.about && form.about.trim()), label: "Tu descripción" },
+            { ok: !!(form.location && form.age && form.height), label: "Comuna, edad y estatura" },
+            { ok: !!(form.eyes && form.hair), label: "Ojos y pelo" },
+          ];
+          const done = checklist.filter((c) => c.ok).length;
+          const pct = Math.round((done / checklist.length) * 100);
+          const next = checklist.find((c) => !c.ok);
+          return (
+            <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, margin: 0 }}>Tu perfil</h2>
+                <span style={{ fontSize: 20, fontWeight: 800, color: pct === 100 ? "#22c55e" : "#fff" }}>{pct}%</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 999, background: "#12122a", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, borderRadius: 999, background: pct === 100 ? "#22c55e" : "linear-gradient(90deg,#8B5CF6,#ec4899)", transition: "width .3s ease" }} />
+              </div>
+              <p style={{ fontSize: 12.5, color: pct === 100 ? "#22c55e" : "#c4c4d8", margin: "10px 0 0" }}>
+                {pct === 100 ? "¡Perfil completo! Así destacas más 🔥" : next ? `Siguiente: ${next.label} para destacar más ✨` : ""}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                {checklist.map((c) => (
+                  <span key={c.label} style={{ fontSize: 11, padding: "4px 9px", borderRadius: 999, background: c.ok ? "rgba(34,197,94,0.15)" : "#12122a", color: c.ok ? "#22c55e" : "#7878a0", border: `1px solid ${c.ok ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.08)"}` }}>
+                    {c.ok ? "✓" : "○"} {c.label}
+                  </span>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
+
         {/* Stories */}
         <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
           <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, marginBottom: 12 }}>
