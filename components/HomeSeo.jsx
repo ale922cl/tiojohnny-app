@@ -1,4 +1,5 @@
 import TalentCards from "./TalentCards";
+import { EVENT_TYPES } from "@/lib/landing";
 
 // Server-rendered SEO layer for the homepage: real content + crawlable
 // links to every comuna/category/profile page. Removed once the client
@@ -45,6 +46,15 @@ export default function HomeSeo({ talents, comunas, categories }) {
             </div>
           </section>
         )}
+
+        <section style={{ marginBottom: 26 }}>
+          <h2 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1.5, color: "#8B5CF6", margin: "0 0 10px" }}>Para tu evento</h2>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {Object.entries(EVENT_TYPES).map(([slug, cfg]) => (
+              <a key={slug} href={`/eventos/${slug}`} style={linkStyle}>{cfg.name}</a>
+            ))}
+          </div>
+        </section>
 
         {featured.length > 0 && (
           <section>
