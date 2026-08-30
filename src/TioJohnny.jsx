@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Search, Heart, X, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Phone, MessageCircle,
   MapPin, Filter, Lock, LogOut, Plus, Trash2, Edit3, Save, Eye, EyeOff,
@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { modeloSlug } from "../lib/seo";
+import { logActivity } from "../lib/activity";
 
 
 
@@ -629,6 +630,7 @@ export default function TioJohnny() {
   const [stories, setStories] = useState([]);            // active (non-expired) stories
   const [storyView, setStoryView] = useState(null);      // { talentId, si } or null
   const [seenStories, setSeenStories] = useState(() => new Set()); // story ids already watched (persisted)
+  const [activity, setActivity] = useState({}); // talent_id -> { ws: week_stories, as: activity_score }
   const markStorySeen = (id) => setSeenStories((prev) => {
     if (prev.has(id)) return prev;
     const next = new Set(prev); next.add(id);
@@ -938,6 +940,10 @@ export default function TioJohnny() {
     fetchTalents();
     fetchCategories();
     fetchAds();
+    // Activity scores for ranking + Modelo de la semana
+    supabase.from("talent_week_activity").select("*").then(({ data }) => {
+      if (data) { const m = {}; for (const r of data) m[r.talent_id] = { ws: r.week_stories || 0, as: r.activity_score || 0 }; setActivity(m); }
+    });
     fetchStories();
     trackEvent("page_view", null, null, JSON.stringify({ device: getDeviceType() }));
     // Check for existing session
@@ -1315,6 +1321,30 @@ export default function TioJohnny() {
     return true;
   });
 
+  // ── Modelo de la semana: most stories uploaded since Monday, in this section ──
+  const modeloSemanaId = useMemo(() => {
+    let best = null, bestWs = 0, bestAs = -1;
+    for (const t of talents) {
+      if (t.archived || t.status === "pendiente") continue;
+      if ((t.section || "main") !== siteSection) continue;
+      const a = activity[t.id];
+      if (!a || a.ws <= 0) continue;
+      if (a.ws > bestWs || (a.ws === bestWs && a.as > bestAs)) { best = t.id; bestWs = a.ws; bestAs = a.as; }
+    }
+    return best;
+  }, [talents, activity, siteSection]);
+
+  // Grid order: Modelo de la semana first, then by recent activity, then admin sort_order
+  const sortedFiltered = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (a.id === modeloSemanaId) return -1;
+      if (b.id === modeloSemanaId) return 1;
+      const as = activity[a.id]?.as || 0, bs = activity[b.id]?.as || 0;
+      if (bs !== as) return bs - as;
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    });
+  }, [filtered, activity, modeloSemanaId]);
+
   // ── Stories: which talents (current section, visible) have active stories ──
   const getTalentStories = (talentId) => stories.filter((s) => s.talent_id === talentId);
   const talentHasUnseen = (t) => getTalentStories(t.id).some((s) => !seenStories.has(s.id));
@@ -1502,6 +1532,7 @@ export default function TioJohnny() {
       try {
         const url = await uploadPhoto(file, tempId);
         setFormPhotos((prev) => [...prev, url]);
+        if (editorId) logActivity(supabase, editorId, "photo");
       } catch (err) {
         console.error("Upload failed:", err);
         lastError = err?.message || "No se pudo subir la imagen.";
@@ -1529,7 +1560,7 @@ export default function TioJohnny() {
     setVideoUploading(true);
     let lastError = "";
     for (const file of files.slice(0, remaining)) {
-      try { const url = await uploadTalentVideo(file, tempId); setFormVideos((prev) => [...prev, url]); }
+      try { const url = await uploadTalentVideo(file, tempId); setFormVideos((prev) => [...prev, url]); if (editorId) logActivity(supabase, editorId, "video"); }
       catch (err) { lastError = err?.message || "No se pudo subir el video."; }
     }
     setVideoUploading(false);
@@ -1558,6 +1589,7 @@ export default function TioJohnny() {
         const { url, media_type } = await uploadTalentStory(file, editorId);
         const { error } = await supabase.from("stories").insert([{ talent_id: editorId, media_url: url, media_type }]);
         if (error) throw new Error(error.message.includes("STORY_LIMIT") ? "Máximo 5 historias cada 24 horas." : error.message);
+        logActivity(supabase, editorId, "story");
       } catch (err) { lastError = err?.message || "No se pudo subir la historia."; }
     }
     setEditorStoryBusy(false);
@@ -5824,7 +5856,7 @@ export default function TioJohnny() {
             </div>
           )}
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 px-3 pb-8 ${gridMorphing ? "grid-morph-out" : ""}`}>
-            {filtered.flatMap((t, idx) => {
+            {sortedFiltered.flatMap((t, idx) => {
               const isFav = favorites.includes(t.id);
               const isHeartbeat = heartbeatIds.includes(t.id);
               const lp = makeLongPress(t);
@@ -5834,6 +5866,7 @@ export default function TioJohnny() {
               const trendLimit = filtered.length >= 10 ? 3 : 2;
               const isTrending = trendViews >= 1 && trendRank < trendLimit;
               const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
+              const isModeloSemana = t.id === modeloSemanaId;
               const card = (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
@@ -5844,7 +5877,7 @@ export default function TioJohnny() {
                   onPointerLeave={castMode ? undefined : (e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
                   onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
                   className="grid-morph-in rounded-2xl cursor-pointer"
-                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
+                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isModeloSemana ? "0 0 22px 6px rgba(251,191,36,0.4)" : isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isModeloSemana ? "2.5px solid #fbbf24" : isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={getThumb(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
@@ -5865,6 +5898,11 @@ export default function TioJohnny() {
                     </button>
                     <div className="absolute bottom-0 left-0 right-0 p-3">
                       <div className="flex flex-wrap gap-1 mb-1">
+                      {isModeloSemana && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(251,191,36,0.22)", border: "1px solid rgba(251,191,36,0.55)" }}>
+                          <span style={{ fontSize: 9, color: "#fbbf24", fontWeight: 800 }}>⭐ Modelo de la semana</span>
+                        </div>
+                      )}
                       {cardBadgesFor(t).map((c) => (
                         <div key={c.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: `${c.color || "#8B5CF6"}33`, border: `1px solid ${c.color || "#8B5CF6"}` }}>
                           <span style={{ fontSize: 9, color: c.color || "#8B5CF6", fontWeight: 700 }}>{c.emoji ? `${c.emoji} ` : ""}{c.name}</span>
