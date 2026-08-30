@@ -6031,13 +6031,6 @@ export default function TioJohnny() {
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={cardPhotos[pi]} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: multiPhoto ? "none" : `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" draggable={false} />
-                    {multiPhoto && (
-                      <div className="absolute top-2 left-2 right-10 flex gap-1" style={{ zIndex: 4 }}>
-                        {cardPhotos.map((_, di) => (
-                          <div key={di} style={{ flex: 1, height: 2.5, borderRadius: 3, background: di === pi ? "#fff" : "rgba(255,255,255,0.4)", transition: "background 0.2s" }} />
-                        ))}
-                      </div>
-                    )}
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     {castMode && (
                       <div className="absolute inset-0 flex items-center justify-center" style={{ background: castSelected.has(t.id) ? "rgba(139,92,246,0.5)" : "transparent", transition: "background 0.15s", zIndex: 3 }}>
