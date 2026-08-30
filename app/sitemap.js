@@ -1,4 +1,4 @@
-import { fetchActiveTalents, comunasWithCounts, categoriesWithCounts } from "@/lib/landing";
+import { fetchActiveTalents, comunasWithCounts, categoriesWithCounts, EVENT_TYPES } from "@/lib/landing";
 import { modeloPath } from "@/lib/seo";
 
 const SITE = "https://tiojohnny.cl";
@@ -14,10 +14,13 @@ export default async function sitemap() {
     const cats = categoriesWithCounts(talents).map((c) => ({
       url: `${SITE}/categoria/${c.slug}`, changeFrequency: "weekly", priority: 0.7,
     }));
+    const events = Object.keys(EVENT_TYPES).map((tipo) => ({
+      url: `${SITE}/eventos/${tipo}`, changeFrequency: "monthly", priority: 0.7,
+    }));
     const profiles = talents.map((t) => ({
       url: `${SITE}${modeloPath(t)}`, changeFrequency: "weekly", priority: 0.8,
     }));
-    return [...home, ...comunas, ...cats, ...profiles];
+    return [...home, ...comunas, ...cats, ...events, ...profiles];
   } catch {
     return home;
   }
