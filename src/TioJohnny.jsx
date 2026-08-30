@@ -5819,10 +5819,11 @@ export default function TioJohnny() {
           )}
           <button
             onClick={() => setAvailableOnly((v) => !v)}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
             style={{ background: availableOnly ? "#22c55e" : "#1e1e3a", color: availableOnly ? "#fff" : "#7878a0", border: availableOnly ? "none" : "1px solid #2a2a4a" }}
           >
-            🟢 Disponibles
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: availableOnly ? "#fff" : "#22c55e", display: "inline-block", flexShrink: 0 }} />
+            Disponibles
           </button>
           {/* Currency dropdown */}
           <div className="relative">
