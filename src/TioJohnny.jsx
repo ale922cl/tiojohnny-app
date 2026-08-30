@@ -7,6 +7,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
+import { modeloSlug } from "../lib/seo";
 
 
 
@@ -2917,7 +2918,7 @@ export default function TioJohnny() {
   const handleShare = useCallback(async (t, e) => {
     if (e) e.stopPropagation();
     trackEvent("share", t.id);
-    const url = `${window.location.origin}${window.location.pathname}#/${toSlug(t.name)}`;
+    const url = `${window.location.origin}/modelo/${modeloSlug(t)}`;
     const shareData = {
       title: `${t.name} — TioJohnny.cl`,
       text: `${t.name} · ${t.specialty}`,
@@ -3048,7 +3049,7 @@ export default function TioJohnny() {
       }
 
       // ── QR Code — bottom right corner ──
-      const profileUrl = `${window.location.origin}${window.location.pathname}#/${toSlug(t.name)}`;
+      const profileUrl = `${window.location.origin}/modelo/${modeloSlug(t)}`;
       const qrSize = 16;
       const qrX = W - qrSize - 3, qrY = H - qrSize - 6;
       try {
@@ -6202,8 +6203,7 @@ export default function TioJohnny() {
             style={{ background: "linear-gradient(135deg, #8B5CF6, #ec4899)" }}
             onClick={() => {
               const selected = talents.filter(t => castSelected.has(t.id));
-              const origin = window.location.origin + window.location.pathname;
-              const lines = selected.map(t => `• ${t.name} — ${formatRate(t.rate)}\n  ${origin}#/${toSlug(t.name)}`).join("\n\n");
+              const lines = selected.map(t => `• ${t.name} — ${formatRate(t.rate)}\n  ${window.location.origin}/modelo/${modeloSlug(t)}`).join("\n\n");
               const msg = `Hola! Te comparto esta selección de talentos de TioJohnny.cl:\n\n${lines}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
             }}

@@ -60,6 +60,15 @@ export default async function ModeloPage({ params }) {
   ].filter(([, v]) => clean(v));
   const services = clean(t.experience).split("\n").map((s) => s.trim()).filter(Boolean);
 
+  // A few other models for internal linking (crawl graph + keep browsing)
+  let others = [];
+  try {
+    const { data: rel } = await supabaseServer()
+      .from("talents").select("id, name, location, photos, section, archived, status")
+      .eq("section", t.section || "main").neq("id", t.id).limit(40);
+    others = (rel || []).filter((x) => !x.archived && x.status !== "pendiente" && Array.isArray(x.photos) && x.photos.length).slice(0, 6);
+  } catch {}
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Person",
@@ -152,6 +161,23 @@ export default async function ModeloPage({ params }) {
                 {photos.slice(1).map((url, i) => (
                   <img key={i} src={url} alt={`${t.name} — foto ${i + 2}`} loading="lazy"
                     style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", borderRadius: 12 }} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {others.length > 0 && (
+            <section>
+              <h2 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1.5, color: "#8B5CF6", margin: "0 0 8px" }}>Más modelos</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                {others.map((x) => (
+                  <a key={x.id} href={modeloPath(x)} style={{ textDecoration: "none", color: "inherit" }}>
+                    <div style={{ borderRadius: 12, overflow: "hidden", background: "#0d0d1a", aspectRatio: "3/4" }}>
+                      <img src={x.photos.find(Boolean)} alt={`${x.name}${x.location ? ` — ${x.location}` : ""}`} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 6 }}>{x.name}</div>
+                    {x.location && <div style={{ fontSize: 11, color: "#7878a0" }}>{x.location}</div>}
+                  </a>
                 ))}
               </div>
             </section>
