@@ -661,6 +661,7 @@ export default function TioJohnny() {
   const [storyView, setStoryView] = useState(null);      // { talentId, si } or null
   const [seenStories, setSeenStories] = useState(() => new Set()); // story ids already watched (persisted)
   const [activity, setActivity] = useState({}); // talent_id -> { ws: week_stories, as: activity_score }
+  const [activityAdmin, setActivityAdmin] = useState({}); // admin view: talent_id -> { last, up7, st7 }
   const markStorySeen = (id) => setSeenStories((prev) => {
     if (prev.has(id)) return prev;
     const next = new Set(prev); next.add(id);
@@ -2580,6 +2581,19 @@ export default function TioJohnny() {
     if (data) setEventRequests(data);
   };
 
+  const fetchActivityAdmin = async () => {
+    const since = new Date(Date.now() - 45 * 86400000).toISOString();
+    const { data } = await supabase.from("talent_activity").select("talent_id, kind, created_at").gte("created_at", since).order("created_at", { ascending: false });
+    const now = Date.now();
+    const m = {};
+    for (const r of (data || [])) {
+      let e = m[r.talent_id];
+      if (!e) e = m[r.talent_id] = { last: r.created_at, up7: 0, st7: 0 }; // desc order → first = most recent
+      if (now - new Date(r.created_at).getTime() <= 7 * 86400000) { e.up7++; if (r.kind === "story") e.st7++; }
+    }
+    setActivityAdmin(m);
+  };
+
   const fetchChatSessions = async () => {
     const { data } = await supabase.from("chat_sessions").select("*").order("created_at", { ascending: false }).limit(100);
     if (data) setChatSessions(data);
@@ -4069,7 +4083,74 @@ export default function TioJohnny() {
               )}
             </button>
           )}
+          {!isAnalyticsOnly && (
+            <button
+              onClick={() => { setAdminTab("actividad"); fetchActivityAdmin(); }}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+              style={{ background: adminTab === "actividad" ? "#fbbf24" : "#1e1e3a", color: adminTab === "actividad" ? "#12122a" : "#7878a0" }}
+            >
+              <TrendingUp size={16} /> Actividad
+            </button>
+          )}
         </div>
+
+        {/* ═══ ACTIVIDAD TAB ═══ */}
+        {adminTab === "actividad" && (
+          <div className="px-4 py-3 md:px-6 md:py-5">
+            {(() => {
+              const active = talents.filter((t) => !t.archived && t.status !== "pendiente");
+              const daysAgo = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null);
+              const rows = active.map((t) => ({ t, a: activityAdmin[t.id] || null }))
+                .sort((x, y) => {
+                  const lx = x.a?.last ? new Date(x.a.last).getTime() : 0;
+                  const ly = y.a?.last ? new Date(y.a.last).getTime() : 0;
+                  return lx - ly; // stalest (or never) first
+                });
+              const stale = rows.filter((r) => { const d = daysAgo(r.a?.last); return d === null || d >= 7; }).length;
+              const activeWk = rows.filter((r) => (r.a?.up7 || 0) > 0).length;
+              return (
+                <>
+                  <div className="flex gap-3 mb-4">
+                    <div className="flex-1 rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
+                      <div className="text-2xl font-bold" style={{ color: "#22c55e" }}>{activeWk}</div>
+                      <div style={{ fontSize: 11, color: "#7878a0" }}>activas esta semana</div>
+                    </div>
+                    <div className="flex-1 rounded-xl p-3 text-center" style={{ background: "#1e1e3a" }}>
+                      <div className="text-2xl font-bold" style={{ color: "#f59e0b" }}>{stale}</div>
+                      <div style={{ fontSize: 11, color: "#7878a0" }}>sin actividad +7 días</div>
+                    </div>
+                  </div>
+                  <p className="text-xs mb-3" style={{ color: "#7878a0" }}>Ordenadas de menos a más activa. Toca 💬 para recordarle que suba contenido.</p>
+                  <div className="space-y-2">
+                    {rows.map(({ t, a }) => {
+                      const d = daysAgo(a?.last);
+                      const nudge = `Hola ${(t.name || "").split(" ")[0]} 💜 Sube una historia o fotos hoy para aparecer arriba en TioJohnny y recibir más contactos 🔝🔥`;
+                      const wa = t.phone ? `https://wa.me/${t.phone.replace(/\D/g, "")}?text=${encodeURIComponent(nudge)}` : null;
+                      const color = d === null || d >= 7 ? "#f59e0b" : d >= 3 ? "#c4c4d8" : "#22c55e";
+                      return (
+                        <div key={t.id} className="flex items-center gap-3 p-2 rounded-xl" style={{ background: "#1e1e3a" }}>
+                          <img src={getThumb(t)} alt="" className="rounded-lg object-cover flex-shrink-0" style={{ width: 40, height: 52 }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-white truncate">{t.name}</div>
+                            <div style={{ fontSize: 11, color }}>
+                              {d === null ? "Sin actividad registrada" : d === 0 ? "Activa hoy" : `Última actividad hace ${d} día${d !== 1 ? "s" : ""}`}
+                            </div>
+                            <div style={{ fontSize: 10, color: "#7878a0" }}>{a ? `${a.st7} historia(s) · ${a.up7} subida(s) esta semana` : "—"}</div>
+                          </div>
+                          {wa && (
+                            <a href={wa} target="_blank" rel="noopener noreferrer" className="p-2 rounded-full flex-shrink-0" style={{ background: "#25D366" }} title="Recordar por WhatsApp">
+                              <MessageCircle size={16} color="#fff" />
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
 
         {/* ═══ ANALYTICS TAB ═══ */}
         {adminTab === "analytics" && (
