@@ -44,6 +44,35 @@ const NATIONALITIES = [
   "Uruguaya","Mexicana","Española","Otra",
 ];
 
+// ── Availability (positive-only): true only when explicitly available ──
+const _DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const _toMins = (hhmm) => { const [h, m] = (hhmm || "").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+function santiagoNowParts() {
+  const d = new Date();
+  const wd = new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", weekday: "short" }).format(d).toLowerCase().slice(0, 3);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  return { wd, mins: _toMins(hm) };
+}
+function isAvailableNow(t) {
+  const a = t && t.availability;
+  if (!a || typeof a !== "object") return false;
+  if (a.mode === "manual") return !!a.on;
+  if (a.mode === "schedule") {
+    const { wd, mins } = santiagoNowParts();
+    const within = (h) => {
+      if (!h || !h.on || !h.from || !h.to) return false;
+      const f = _toMins(h.from), tt = _toMins(h.to);
+      return f <= tt ? (mins >= f && mins < tt) : (mins >= f || mins < tt);
+    };
+    if (within(a.hours?.[wd])) return true;
+    const prev = _DAY_KEYS[(_DAY_KEYS.indexOf(wd) + 6) % 7];
+    const ph = a.hours?.[prev];
+    if (ph && ph.on && ph.from && ph.to) { const f = _toMins(ph.from), tt = _toMins(ph.to); if (f > tt && mins < tt) return true; }
+    return false;
+  }
+  return false;
+}
+
 const PALETTES = [
   { bg1: "#6d28d9", bg2: "#c084fc", skin: "#d4a574", hair: "#1a0a2e", accent: "#a78bfa", top: "#2d1b69" },
   { bg1: "#1e3a5f", bg2: "#7dd3fc", skin: "#c68642", hair: "#0d0d0d", accent: "#60a5fa", top: "#1e293b" },
@@ -621,6 +650,7 @@ export default function TioJohnny() {
   const [filterHair, setFilterHair] = useState([]);               // multi-select
   const [filterLocation, setFilterLocation] = useState([]);       // multi-select (Comuna)
   const [filterDomicilio, setFilterDomicilio] = useState(false);  // toggle
+  const [availableOnly, setAvailableOnly] = useState(false);      // "Disponible ahora" filter
   const [filterAgeMin, setFilterAgeMin] = useState("");           // dropdown
   const [filterAgeMax, setFilterAgeMax] = useState("");           // dropdown
   const [filterHeightMin, setFilterHeightMin] = useState("");     // dropdown
@@ -1305,6 +1335,7 @@ export default function TioJohnny() {
     if (filterHair.length && !filterHair.some((v) => (t.hair || "").toLowerCase() === v.toLowerCase())) return false;
     if (filterLocation.length && !filterLocation.some((v) => (t.location || "").toLowerCase() === v.toLowerCase())) return false;
     if (filterDomicilio && !getTalentCategories(t).some((c) => c.toLowerCase() === "domicilio")) return false;
+    if (availableOnly && !isAvailableNow(t)) return false;
     if (filterAgeMin || filterAgeMax) {
       const age = parseNum(t.age);
       if (age === null) return false;
@@ -5305,7 +5336,12 @@ export default function TioJohnny() {
 
           <div className="px-5 pb-32" style={{ color: "#e2e2f0" }}>
           <div className="mt-2">
-            <h2 className="text-2xl font-bold text-white">{t.name}</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-2xl font-bold text-white">{t.name}</h2>
+              {isAvailableNow(t) && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.45)", fontSize: 11, color: "#22c55e", fontWeight: 700 }}>🟢 Disponible ahora</span>
+              )}
+            </div>
             <p className="text-sm mt-1" style={{ color: "#8B5CF6" }}>{t.specialty} &middot; {formatRate(t.rate)}</p>
           </div>
           {getTalentStories(t.id).length > 0 && (
@@ -5701,6 +5737,13 @@ export default function TioJohnny() {
             </button>
           )}
           <button
+            onClick={() => setAvailableOnly((v) => !v)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+            style={{ background: availableOnly ? "#22c55e" : "#1e1e3a", color: availableOnly ? "#fff" : "#7878a0", border: availableOnly ? "none" : "1px solid #2a2a4a" }}
+          >
+            🟢 Disponibles
+          </button>
+          <button
             onClick={() => { const next = !castMode; setCastMode(next); setCastSelected(new Set()); if (next) { setCastToast(true); setTimeout(() => setCastToast(false), 3500); } }}
             className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
             style={{ background: castMode ? "#8B5CF6" : "#1e1e3a", color: castMode ? "#fff" : "#7878a0", border: castMode ? "none" : "1px solid #2a2a4a" }}
@@ -5901,6 +5944,11 @@ export default function TioJohnny() {
                       {isModeloSemana && (
                         <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(251,191,36,0.22)", border: "1px solid rgba(251,191,36,0.55)" }}>
                           <span style={{ fontSize: 9, color: "#fbbf24", fontWeight: 800 }}>⭐ Modelo de la semana</span>
+                        </div>
+                      )}
+                      {isAvailableNow(t) && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.45)" }}>
+                          <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700 }}>🟢 Disponible ahora</span>
                         </div>
                       )}
                       {cardBadgesFor(t).map((c) => (

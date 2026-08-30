@@ -79,6 +79,7 @@ export default function PortalPage() {
   const [photos, setPhotos] = useState([]);
   const [videos, setVideos] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [availability, setAvailability] = useState({ mode: "manual", on: false, hours: {} });
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -144,6 +145,8 @@ export default function PortalPage() {
       setPhotos(Array.isArray(data.photos) ? data.photos : []);
       setVideos(Array.isArray(data.videos) ? data.videos : []);
       setCategories(Array.isArray(data.category) ? data.category : []);
+      const av = data.availability && typeof data.availability === "object" ? data.availability : {};
+      setAvailability({ mode: av.mode === "schedule" ? "schedule" : "manual", on: !!av.on, hours: av.hours && typeof av.hours === "object" ? av.hours : {} });
       refreshStories(data.id);
     } else {
       setTalent(null);
@@ -292,13 +295,20 @@ export default function PortalPage() {
   };
   const hoursLeft = (expires) => Math.max(0, Math.round((new Date(expires).getTime() - Date.now()) / 3600000));
 
+  // ── availability ──
+  const DAYS = [["mon", "Lun"], ["tue", "Mar"], ["wed", "Mié"], ["thu", "Jue"], ["fri", "Vie"], ["sat", "Sáb"], ["sun", "Dom"]];
+  const setAvailDay = (key, patch) => setAvailability((a) => ({
+    ...a,
+    hours: { ...(a.hours || {}), [key]: { on: false, from: "20:00", to: "01:00", ...(a.hours?.[key] || {}), ...patch } },
+  }));
+
   const toggleCategory = (name) =>
     setCategories((c) => (c.includes(name) ? c.filter((x) => x !== name) : [...c, name]));
 
   const handleSave = async () => {
     if (!talent) return;
     setSaving(true); setSavedMsg("");
-    const payload = { ...form, category: categories, photos, videos };
+    const payload = { ...form, category: categories, photos, videos, availability };
     const { error } = await supabase.from("talents").update(payload).eq("id", talent.id);
     setSaving(false);
     setSavedMsg(error ? `Error al guardar: ${error.message}` : "¡Guardado! ✅");
@@ -444,6 +454,53 @@ export default function PortalPage() {
             </section>
           );
         })()}
+
+        {/* Availability */}
+        <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: ACCENT, marginBottom: 4 }}>Disponibilidad</h2>
+          <p style={{ fontSize: 12, color: "#7878a0", margin: "0 0 12px" }}>Cuando estés disponible aparece un <b style={{ color: "#22c55e" }}>🟢 Disponible ahora</b> en tu perfil — atrae más contactos.</p>
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[["manual", "Yo lo activo"], ["schedule", "Por horario"]].map(([m, label]) => (
+              <button key={m} onClick={() => setAvailability((a) => ({ ...a, mode: m }))}
+                style={{ flex: 1, padding: "9px", borderRadius: 10, fontSize: 13, fontWeight: 600, background: availability.mode === m ? ACCENT : "transparent", color: availability.mode === m ? "#fff" : "#9898b0", border: `1px solid ${availability.mode === m ? ACCENT : "rgba(255,255,255,0.15)"}` }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {availability.mode === "manual" ? (
+            <button onClick={() => setAvailability((a) => ({ ...a, on: !a.on }))}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 12, background: "#12122a", border: `1px solid ${availability.on ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.1)"}` }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: availability.on ? "#22c55e" : "#c4c4d8" }}>
+                {availability.on ? "🟢 Disponible ahora" : "Disponible ahora"}
+              </span>
+              <span style={{ width: 44, height: 26, borderRadius: 999, background: availability.on ? "#22c55e" : "#3a3a52", position: "relative", transition: "background .2s", flexShrink: 0 }}>
+                <span style={{ position: "absolute", top: 3, left: availability.on ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+              </span>
+            </button>
+          ) : (
+            <div className="space-y-2">
+              {DAYS.map(([key, label]) => {
+                const h = availability.hours?.[key] || { on: false, from: "20:00", to: "01:00" };
+                return (
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => setAvailDay(key, { on: !h.on })}
+                      style={{ width: 52, flexShrink: 0, padding: "7px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, background: h.on ? "rgba(34,197,94,0.15)" : "#12122a", color: h.on ? "#22c55e" : "#7878a0", border: `1px solid ${h.on ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.1)"}` }}>
+                      {label}
+                    </button>
+                    <input type="time" value={h.from} disabled={!h.on} onChange={(e) => setAvailDay(key, { from: e.target.value })}
+                      style={{ ...inputStyle, padding: "7px 8px", opacity: h.on ? 1 : 0.4, colorScheme: "dark" }} />
+                    <span style={{ color: "#7878a0" }}>–</span>
+                    <input type="time" value={h.to} disabled={!h.on} onChange={(e) => setAvailDay(key, { to: e.target.value })}
+                      style={{ ...inputStyle, padding: "7px 8px", opacity: h.on ? 1 : 0.4, colorScheme: "dark" }} />
+                  </div>
+                );
+              })}
+              <p style={{ fontSize: 11, color: "#6b6b90", marginTop: 8 }}>Ej: Lun–Vie de 20:00 a 01:00. Apareces disponible automáticamente en esos horarios.</p>
+            </div>
+          )}
+        </section>
 
         {/* Stories */}
         <section style={{ background: CARD, borderRadius: 16, padding: 16, marginBottom: 16 }}>
