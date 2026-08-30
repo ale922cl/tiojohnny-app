@@ -7,7 +7,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
-import { modeloSlug } from "../lib/seo";
+import { modeloSlug, modeloPath } from "../lib/seo";
 import { logActivity } from "../lib/activity";
 
 
@@ -1203,7 +1203,7 @@ export default function TioJohnny() {
   const getCarouselPhotos = (t) => getPhotos(t);
 
   const toggleFav = useCallback((id, e) => {
-    e.stopPropagation();
+    if (e) { e.stopPropagation(); e.preventDefault?.(); }
     const adding = !favorites.includes(id);
     setFavorites((prev) => prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]);
     trackEvent(adding ? "favorite" : "unfavorite", id);
@@ -5994,16 +5994,19 @@ export default function TioJohnny() {
               const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
               const isModeloSemana = t.id === modeloSemanaId;
               const card = (
-                <div
+                <a
                   key={`${t.id}-${cardAnimKey}`}
-                  onPointerDown={castMode ? undefined : lp.onPointerDown}
-                  onPointerUp={castMode ? undefined : lp.onPointerUp}
-                  onPointerCancel={castMode ? undefined : lp.onPointerCancel}
+                  href={modeloPath(t)}
+                  onClick={(e) => {
+                    if (castMode) { e.preventDefault(); e.stopPropagation(); toggleCast(t.id); return; }
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; // let the browser open a new tab
+                    e.preventDefault();
+                    openProfile(t);
+                  }}
                   onPointerMove={castMode ? undefined : handleCardPointerMove}
-                  onPointerLeave={castMode ? undefined : (e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
-                  onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
+                  onPointerLeave={castMode ? undefined : handleCardPointerLeave}
                   className={`${isModeloSemana ? "modelo-semana-glow" : "grid-morph-in"} rounded-2xl cursor-pointer`}
-                  style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isModeloSemana ? "0 0 22px 6px rgba(251,191,36,0.4)" : isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isModeloSemana ? "2.5px solid #fbbf24" : isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
+                  style={{ display: "block", textDecoration: "none", color: "inherit", background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isModeloSemana ? "0 0 22px 6px rgba(251,191,36,0.4)" : isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isModeloSemana ? "2.5px solid #fbbf24" : isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
                     <img src={getThumb(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
@@ -6054,7 +6057,7 @@ export default function TioJohnny() {
                       <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{formatRate(t.rate)}</p>
                     </div>
                   </div>
-                </div>
+                </a>
               );
               // Inject a rotating ad card after every AD_EVERY profiles
               if (activeAds.length > 0 && (idx + 1) % AD_EVERY === 0) {
