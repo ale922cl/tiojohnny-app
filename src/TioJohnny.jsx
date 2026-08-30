@@ -405,6 +405,11 @@ const ANIM_CSS = `
   100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); outline: 2px solid rgba(244,63,94,0); }
 }
 .heartbeat-fav { animation: heartbeatGlow 0.8s ease-in-out 3; outline-offset: 0px; }
+@keyframes goldGlow {
+  0%, 100% { box-shadow: 0 0 14px 3px rgba(251,191,36,0.35); }
+  50%      { box-shadow: 0 0 32px 11px rgba(251,191,36,0.7); }
+}
+.modelo-semana-glow { animation: goldGlow 1.8s ease-in-out infinite; }
 @keyframes splashLogo {
   0%   { opacity: 0; transform: scale(0.7); filter: blur(8px); }
   40%  { opacity: 1; transform: scale(1.05); filter: blur(0); }
@@ -5997,7 +6002,7 @@ export default function TioJohnny() {
                   onPointerMove={castMode ? undefined : handleCardPointerMove}
                   onPointerLeave={castMode ? undefined : (e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
                   onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
-                  className="grid-morph-in rounded-2xl cursor-pointer"
+                  className={`${isModeloSemana ? "modelo-semana-glow" : "grid-morph-in"} rounded-2xl cursor-pointer`}
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isModeloSemana ? "0 0 22px 6px rgba(251,191,36,0.4)" : isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isModeloSemana ? "2.5px solid #fbbf24" : isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
