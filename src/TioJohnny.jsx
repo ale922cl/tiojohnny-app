@@ -4023,8 +4023,8 @@ export default function TioJohnny() {
   }
 
   if (view === "admin") {
-    const ANALYTICS_EMAILS = ["aceitunoafarica@hotmail.com"];
-    const isAnalyticsOnly = session?.user?.user_metadata?.role === "analytics" || ANALYTICS_EMAILS.includes(session?.user?.email);
+    // Analytics-only access is driven purely by the admins-table role now.
+    const isAnalyticsOnly = myRole === "analytics";
     return (
       <div className="min-h-screen" style={{ background: "#12122a", color: "#fff" }}>
         <div className={`mx-auto ${adminTab === "analytics" ? "max-w-6xl" : "max-w-3xl"}`}>
