@@ -683,7 +683,9 @@ export default function TioJohnny() {
   const lightboxTouchX = useRef(null);
   const [favorites, setFavorites] = useState(() => {
     try {
-      const match = document.cookie.match(/tj_favs=([^;]+)/);
+      const ls = localStorage.getItem("tj_favs");
+      if (ls) return JSON.parse(ls);
+      const match = document.cookie.match(/tj_favs=([^;]+)/); // migrate old cookie
       return match ? JSON.parse(decodeURIComponent(match[1])) : [];
     } catch (_) { return []; }
   });
@@ -1240,6 +1242,7 @@ export default function TioJohnny() {
   }, [favorites]);
 
   useEffect(() => {
+    try { localStorage.setItem("tj_favs", JSON.stringify(favorites)); } catch (_) {}
     try {
       document.cookie = "tj_favs=" + encodeURIComponent(JSON.stringify(favorites)) + ";max-age=31536000;path=/;SameSite=Lax";
     } catch (_) {}
@@ -2771,17 +2774,43 @@ export default function TioJohnny() {
   const lastTapRef = useRef(null);    // for double-tap-to-favorite
   const openTimerRef = useRef(null);  // delayed open after single tap
   const pointerDownRef = useRef(false); // true while finger/pointer is pressed
+  const swipeStartX = useRef(null), swipeStartY = useRef(null), swipeStartId = useRef(null), swipedRef = useRef(false); // card photo swipe
+  const [cardPhoto, setCardPhoto] = useState({}); // talent id -> current photo index on the grid card
   const heroTouchX = useRef(null);    // carousel swipe touch tracking
   const makeLongPress = (t) => ({
-    onPointerDown: () => {
+    onPointerDown: (e) => {
       if (castMode) return;
       pointerDownRef.current = true;
       didLongPressRef.current = false;
+      swipeStartX.current = e?.clientX ?? null;
+      swipeStartY.current = e?.clientY ?? null;
+      swipeStartId.current = t.id;
+      swipedRef.current = false;
       longPressTimerRef.current = setTimeout(() => { didLongPressRef.current = true; setSpotlightTalent(t); }, 400);
+    },
+    onPointerMove: (e) => {
+      if (castMode || swipeStartX.current == null || swipeStartId.current !== t.id) return;
+      const dx = e.clientX - swipeStartX.current;
+      const dy = e.clientY - swipeStartY.current;
+      // Any real movement (drag or scroll) means it's not a stationary long-press
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearTimeout(longPressTimerRef.current);
+      // Horizontal-dominant drag past threshold = swipe one photo
+      if (!swipedRef.current && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+        swipedRef.current = true;
+        clearTimeout(openTimerRef.current);
+        const n = (t.photos || []).length;
+        if (n > 1) setCardPhoto((p) => {
+          const cur = p[t.id] || 0;
+          const next = Math.max(0, Math.min(dx < 0 ? cur + 1 : cur - 1, n - 1));
+          return next === cur ? p : { ...p, [t.id]: next };
+        });
+      }
     },
     onPointerUp: (e) => {
       clearTimeout(longPressTimerRef.current);
       pointerDownRef.current = false;
+      swipeStartX.current = null;
+      if (swipedRef.current) { swipedRef.current = false; return; } // was a swipe, not a tap
       if (didLongPressRef.current || castMode) return;
       const now = Date.now();
       if (lastTapRef.current?.id === t.id && now - lastTapRef.current.time < 320) {
@@ -5985,20 +6014,30 @@ export default function TioJohnny() {
               const isTrending = trendViews >= 1 && trendRank < trendLimit;
               const isNew = t.created_at && (Date.now() - new Date(t.created_at).getTime()) < 7 * 86400000;
               const isModeloSemana = t.id === modeloSemanaId;
+              const cardPhotos = getPhotos(t);
+              const pi = Math.min(cardPhoto[t.id] || 0, cardPhotos.length - 1);
+              const multiPhoto = cardPhotos.length > 1;
               const card = (
                 <div
                   key={`${t.id}-${cardAnimKey}`}
                   onPointerDown={castMode ? undefined : lp.onPointerDown}
                   onPointerUp={castMode ? undefined : lp.onPointerUp}
                   onPointerCancel={castMode ? undefined : lp.onPointerCancel}
-                  onPointerMove={castMode ? undefined : handleCardPointerMove}
+                  onPointerMove={castMode ? undefined : (e) => { handleCardPointerMove(e); lp.onPointerMove(e); }}
                   onPointerLeave={castMode ? undefined : (e) => { try { lp.onPointerLeave(); handleCardPointerLeave(e); } catch(_){} }}
                   onClick={castMode ? (e) => { e.stopPropagation(); toggleCast(t.id); } : undefined}
                   className="grid-morph-in rounded-2xl cursor-pointer"
                   style={{ background: "#1e1e3a", animationDelay: `${idx * 0.05}s`, WebkitUserSelect: "none", userSelect: "none", willChange: "transform", transition: "box-shadow 0.4s ease, outline 0.4s ease", boxShadow: isModeloSemana ? "0 0 22px 6px rgba(251,191,36,0.4)" : isHeartbeat ? "0 0 24px 10px rgba(244,63,94,0.5)" : isFav ? "0 0 12px 4px rgba(244,63,94,0.22)" : "none", outline: isModeloSemana ? "2.5px solid #fbbf24" : isHeartbeat ? "2px solid rgba(244,63,94,0.75)" : isFav ? "1.5px solid rgba(244,63,94,0.35)" : "none" }}
                 >
                   <div className="relative rounded-2xl overflow-hidden" style={{ paddingBottom: "130%" }}>
-                    <img src={getThumb(t)} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" />
+                    <img src={cardPhotos[pi]} alt={t.name} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "top", animation: multiPhoto ? "none" : `kenBurns${(idx % 3) + 1} ${6 + (idx % 3) * 2}s ease-in-out infinite alternate`, willChange: "transform", transformOrigin: "center center" }} loading="lazy" draggable={false} />
+                    {multiPhoto && (
+                      <div className="absolute top-2 left-2 right-10 flex gap-1" style={{ zIndex: 4 }}>
+                        {cardPhotos.map((_, di) => (
+                          <div key={di} style={{ flex: 1, height: 2.5, borderRadius: 3, background: di === pi ? "#fff" : "rgba(255,255,255,0.4)", transition: "background 0.2s" }} />
+                        ))}
+                      </div>
+                    )}
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(18,18,42,0.95) 100%)" }} />
                     {castMode && (
                       <div className="absolute inset-0 flex items-center justify-center" style={{ background: castSelected.has(t.id) ? "rgba(139,92,246,0.5)" : "transparent", transition: "background 0.15s", zIndex: 3 }}>
