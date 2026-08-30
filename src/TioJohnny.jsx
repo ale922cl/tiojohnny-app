@@ -4038,11 +4038,11 @@ export default function TioJohnny() {
         </header>
 
         {/* Admin tabs */}
-        <div className="flex gap-2 px-4 pt-3 pb-1">
+        <div className="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto">
           {!isAnalyticsOnly && (
             <button
               onClick={() => setAdminTab("profiles")}
-              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+              className="flex-shrink-0 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap"
               style={{ background: adminTab === "profiles" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "profiles" ? "#fff" : "#7878a0" }}
             >
               <Users size={16} /> Perfiles
@@ -4051,7 +4051,7 @@ export default function TioJohnny() {
           {!isAnalyticsOnly && (
             <button
               onClick={() => { setAdminTab("pendientes"); fetchPending(); }}
-              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all relative"
+              className="flex-shrink-0 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap relative"
               style={{ background: adminTab === "pendientes" ? "#f59e0b" : "#1e1e3a", color: adminTab === "pendientes" ? "#fff" : "#7878a0" }}
             >
               <AlertCircle size={16} /> Pendientes
@@ -4064,7 +4064,7 @@ export default function TioJohnny() {
           )}
           <button
             onClick={() => { setAdminTab("analytics"); if (!analyticsData) fetchAnalytics(); }}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+            className="flex-shrink-0 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap"
             style={{ background: adminTab === "analytics" ? "#8B5CF6" : "#1e1e3a", color: adminTab === "analytics" ? "#fff" : "#7878a0" }}
           >
             <BarChart3 size={16} /> Analytics
@@ -4072,7 +4072,7 @@ export default function TioJohnny() {
           {!isAnalyticsOnly && (
             <button
               onClick={() => { setAdminTab("cotizaciones"); fetchEventRequests(); }}
-              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all relative"
+              className="flex-shrink-0 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap relative"
               style={{ background: adminTab === "cotizaciones" ? "#22c55e" : "#1e1e3a", color: adminTab === "cotizaciones" ? "#fff" : "#7878a0" }}
             >
               <MessageSquare size={16} /> Eventos
@@ -4086,7 +4086,7 @@ export default function TioJohnny() {
           {!isAnalyticsOnly && (
             <button
               onClick={() => { setAdminTab("actividad"); fetchActivityAdmin(); }}
-              className="flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all"
+              className="flex-shrink-0 py-2.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap"
               style={{ background: adminTab === "actividad" ? "#fbbf24" : "#1e1e3a", color: adminTab === "actividad" ? "#12122a" : "#7878a0" }}
             >
               <TrendingUp size={16} /> Actividad
