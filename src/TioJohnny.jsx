@@ -933,6 +933,8 @@ export default function TioJohnny() {
 
   // ─── Load data from Supabase on mount ───────────────────────────────
   useEffect(() => {
+    // Remove the server-rendered SEO layer now that the interactive app is up
+    if (typeof document !== "undefined") document.getElementById("home-seo")?.remove();
     fetchTalents();
     fetchCategories();
     fetchAds();
