@@ -6032,11 +6032,6 @@ export default function TioJohnny() {
                           <span style={{ fontSize: 9, color: "#fbbf24", fontWeight: 800 }}>⭐ Modelo de la semana</span>
                         </div>
                       )}
-                      {isAvailableNow(t) && (
-                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.45)" }}>
-                          <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700 }}>🟢 Disponible ahora</span>
-                        </div>
-                      )}
                       {cardBadgesFor(t).map((c) => (
                         <div key={c.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: `${c.color || "#8B5CF6"}33`, border: `1px solid ${c.color || "#8B5CF6"}` }}>
                           <span style={{ fontSize: 9, color: c.color || "#8B5CF6", fontWeight: 700 }}>{c.emoji ? `${c.emoji} ` : ""}{c.name}</span>
@@ -6054,7 +6049,12 @@ export default function TioJohnny() {
                       </div>
                       <h3 className="text-sm font-bold text-white leading-tight">{t.name}</h3>
                       <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#b8b8d0" }}><MapPin size={10} />{t.location || "Sin ubicación"}</p>
-                      <p className="text-xs font-bold mt-1" style={{ color: "#8B5CF6" }}>{formatRate(t.rate)}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <p className="text-xs font-bold" style={{ color: "#8B5CF6" }}>{formatRate(t.rate)}</p>
+                        {isAvailableNow(t) && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.2)", border: "1px solid rgba(34,197,94,0.45)", fontSize: 9, color: "#22c55e", fontWeight: 700 }}>🟢 Disponible ahora</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </a>
